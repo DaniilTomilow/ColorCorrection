@@ -19,7 +19,8 @@ bool fromCamera();
 bool fromFile();
 bool fromKinect();
 
-void detectSurface();
+bool detectSurface();
+bool exec(char code);
 
 int width = 640; // Kinect v1 height = 640
 int height = 480; // Kinect v1 width =  480
@@ -34,7 +35,19 @@ int main(int argc, char** argv) {
 	// f = file
 	// k = kinect
 
-	char code = 'f'; // k, f
+	char code = 'f'; 
+	bool d = false;
+
+	while (!d) {
+		if (exec(code)) {
+			d = detectSurface();
+		}
+	}
+	
+	return 0;
+}
+
+bool exec(char code) {
 	bool cmd = false;
 
 	switch (code) {
@@ -45,26 +58,12 @@ int main(int argc, char** argv) {
 
 	if (!cmd) {
 		cerr << "Could not open or find the image" << std::endl;
-		return 0;
+		return false;
 	}
 
-	detectSurface();
-
-	return 0;
+	return true;
 }
 
-/**
-* Helper function to find a cosine of angle between vectors
-* from pt0->pt1 and pt0->pt2
-*/
-static double angle(cv::Point pt1, cv::Point pt2, cv::Point pt0)
-{
-	double dx1 = pt1.x - pt0.x;
-	double dy1 = pt1.y - pt0.y;
-	double dx2 = pt2.x - pt0.x;
-	double dy2 = pt2.y - pt0.y;
-	return (dx1*dx2 + dy1*dy2) / sqrt((dx1*dx1 + dy1*dy1)*(dx2*dx2 + dy2*dy2) + 1e-10);
-}
 /**
 * Helper function to display text in the center of a contour
 */
@@ -88,115 +87,90 @@ void setLabel(cv::Mat& im, const std::string label, std::vector<cv::Point>& cont
 * Keystone korrection.
 * https://github.com/bsdnoobz/opencv-code/blob/master/shape-detect.cpp
 */
-void detectSurface() {
+bool detectSurface() {
 	// Convert to grayscale
 	cvtColor(orig, mask, cv::COLOR_BGR2GRAY);
 	//Mat blur;
 	//GaussianBlur(mask, blur, cv::Size(7, 7), 1.5, 1.5);
-	Mat canny;
-	Canny(mask, canny, 0, 50, 5);
+	Mat tre;
+	threshold(mask, tre, 180, 255,CV_THRESH_BINARY );
 
-	vector<vector<Point> > contours;
-	vector<Vec4i> hierarchy;
-	/// Find contours
+	Mat canny;
+	Canny(tre, canny, 0, 50, 5);
+
+	vector<vector<Point>> contours;
 	findContours(canny, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
 
-	vector<Point> approx;
-	
-	Mat dst(orig);
-	Mat rotated;
+	if (contours.size() == 0)
+		return false;
 
+	Mat dst;
+	Mat transformed; // Ou transformed mask
+	orig.copyTo(dst);
+
+	int largest_contour_index = 0;
+	int largest_area = 0;
 	for (unsigned int i = 0; i < contours.size(); i++)
 	{
-		// Approximate contour with accuracy proportional
-		// to the contour perimeter
-		approxPolyDP(Mat(contours[i]), approx, arcLength(Mat(contours[i]), true)*0.02, true);
-
-		// Skip small or non-convex objects 
-		if (fabs(contourArea(contours[i])) < 100 || !isContourConvex(approx))
-			continue;
-
-		// Number of vertices of polygonal curve
-		int vtc = approx.size();
-
-		if (vtc == 4)
-		{
-			// Get the cosines of all corners
-			vector<double> cos;
-			for (int j = 2; j < vtc + 1; j++) {
-				cos.push_back(angle(approx[j%vtc], approx[j - 2], approx[j - 1]));
-			}
-
-			// Sort ascending the cosine values
-			sort(cos.begin(), cos.end());
-
-			// Get the lowest and the highest cosine
-			double mincos = cos.front();
-			double maxcos = cos.back();
-			
-			//iterating through each point
-			/*
-			1st-------2nd
-            |         |
-            |         |
-            |         |
-            3rd-------4th
-			*/
-			vector<Point> shape;
-			for (int i = 0; i < 4; i++) {
-				shape.push_back(approx.at(i));
-			}
-
-			//drawing lines around the quadrilateral
-			line(dst, shape.at(0), shape.at(1), Scalar(255, 0, 0), 4);
-			line(dst, shape.at(1), shape.at(2), Scalar(0, 255, 0), 4);
-			line(dst, shape.at(2), shape.at(3), Scalar(255, 255, 255), 4);
-			line(dst, shape.at(3), shape.at(0), Scalar(0, 0, 255), 4);
-
-			setLabel(dst, "RECT", contours[i]);
-
-			// Assemble a rotated rectangle out of that info
-			RotatedRect box = minAreaRect(Mat(shape));
-			std::cout << "Rotated box set to (" << box.boundingRect().x << "," << box.boundingRect().y << ") " << box.size.width << "x" << box.size.height << std::endl;
-
-			Point2f pts[4];
-			box.points(pts);
-
-			// topLeft, topRight, bottomRight, bottomLeft?
-			Point2f src_vertices[3];
-			src_vertices[0] = pts[2];
-			src_vertices[1] = pts[3];
-
-			src_vertices[2] = pts[1];
-			src_vertices[3] = pts[0];
-
-			Point2f dst_vertices[3];
-			dst_vertices[0] = Point(0, 0);
-			dst_vertices[1] = Point(box.boundingRect().width - 1, 0);
-			dst_vertices[2] = Point(0, box.boundingRect().height - 1);
-			dst_vertices[3] = Point(box.boundingRect().width - 1, box.boundingRect().height - 1);
-
-			Mat warpAffineMatrix = getAffineTransform(src_vertices, dst_vertices);
-
-			Size size(box.boundingRect().width, box.boundingRect().height);
-			warpAffine(orig, rotated, warpAffineMatrix, size, INTER_LINEAR, BORDER_CONSTANT);
-			
-			// Use the degrees obtained above and the number of vertices
-			// to determine the shape of the contour
-			if(mincos >= -0.1 && maxcos <= 0.3) {
-				setLabel(dst, "NO SURFACE", contours[i]);
-			}
-		}
-		else
-		{
-			setLabel(dst, "NO SURFACE", contours[i]);
+		double a = contourArea(contours[i], false);  //  Find the area of contour
+		if (a > largest_area) {
+			largest_area = a;
+			largest_contour_index = i;                //Store the index of largest contour
 		}
 	}
 
+	// Largest contour
+	vector<Point> contour = contours[largest_contour_index];
+
+	// Approximate contour with accuracy proportional
+	// to the contour perimeter
+	vector<Point> contours_poly;
+	approxPolyDP(Mat(contour), contours_poly, arcLength(Mat(contour), true) * 0.02, true);
+
+	// Number of vertices of polygonal curve
+	int vtc = contours_poly.size();
+
+	// Skip small or non-convex objects 
+	if (vtc != 4 || fabs(contourArea(contour)) < 100 || !isContourConvex(contours_poly)) {
+		std::cerr << "No projectile surface found" << std::endl;
+		return false;
+	}
+
+	Rect boundRect = boundingRect(contour);
+	vector<Point2f> quad_pts;
+	vector<Point2f> squre_pts;
+	quad_pts.push_back(Point2f(contours_poly[0].x, contours_poly[0].y));
+	quad_pts.push_back(Point2f(contours_poly[1].x, contours_poly[1].y));
+	quad_pts.push_back(Point2f(contours_poly[3].x, contours_poly[3].y));
+	quad_pts.push_back(Point2f(contours_poly[2].x, contours_poly[2].y));
+
+	squre_pts.push_back(Point2f(0, 0));
+	squre_pts.push_back(Point2f(0, height));
+	squre_pts.push_back(Point2f(width, 0));
+	squre_pts.push_back(Point2f(width, height));
+
+	Mat transmtx = getPerspectiveTransform(quad_pts, squre_pts);
+	warpPerspective(dst, transformed, transmtx, orig.size());
+
+	Point P1 = contours_poly[0];
+	Point P2 = contours_poly[1];
+	Point P3 = contours_poly[2];
+	Point P4 = contours_poly[3];
+
+	line(dst, P1, P2, Scalar(0, 0, 255), 1, CV_AA, 0);
+	line(dst, P2, P3, Scalar(0, 0, 255), 1, CV_AA, 0);
+	line(dst, P3, P4, Scalar(0, 0, 255), 1, CV_AA, 0);
+	line(dst, P4, P1, Scalar(0, 0, 255), 1, CV_AA, 0);
+
+	rectangle(dst, boundRect, Scalar(0, 255, 0), 1, 8, 0);
+
+	imshow("Surface", transformed);
 	imshow("dst", dst);
-	imshow("rotated", rotated);
+	imshow("tre", tre);
 
 	waitKey(0);
+
+	return true;
 }
 
 
@@ -210,16 +184,21 @@ bool fromCamera() {
 	}
 
 	cv::namedWindow("Camera", cv::WINDOW_AUTOSIZE);
+	int t = 7;
 	while(true)
 	{
-		cv::Mat frame;
+		Mat frame;
+		Mat g;
 		cap >> frame; // get a new frame from camera
-		cv::imshow("Camera", frame);
+
+		imshow("Camera", frame);
+	
 		int k = cv::waitKey(30);
 
 		if (k == 27) break; // ECS
 		else if (k == 'c') {
 			cv::resize(frame, orig, cv::Size(width, height));
+			imwrite("Images/test2.png", orig);
 			cv::destroyWindow("Camera");
 			return true;
 		}
@@ -230,7 +209,7 @@ bool fromCamera() {
 }
 
 bool fromFile() {
-	orig = imread("Images/test1.png", CV_LOAD_IMAGE_COLOR);   // Read the file
+	orig = imread("Images/test2.png", CV_LOAD_IMAGE_COLOR);   // Read the file
 
 	if (!orig.data)                              // Check for invalid input
 	{
