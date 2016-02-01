@@ -20,7 +20,7 @@ bool fromFile();
 bool fromKinect();
 
 bool detectSurface();
-void correct();
+void invert(Mat mat);
 bool exec(char code);
 
 int width = 640; // Kinect v1 height = 640
@@ -28,6 +28,7 @@ int height = 480; // Kinect v1 width =  480
 unsigned int bufferSize = width * height * 4 * sizeof(unsigned char);
 
 Mat src;
+Mat redSurface;
 
 Mat mask;
 
@@ -97,6 +98,7 @@ void GetDesktopResolution(int& width, int& height)
 	cout << "5: Width: " << width << "; height: " << height << '\n';
 }
 
+
 /**
 * Detect projector surface.
 * Keystone korrection.
@@ -108,20 +110,19 @@ bool detectSurface() {
 
 	// Convert to HSV
 	Mat hsv_image;
-	cvtColor(src, hsv_image, cv::COLOR_BGR2HSV);
+	cvtColor(redSurface, hsv_image, cv::COLOR_BGR2HSV);
 
 	Mat lower_red_hue_range, upper_red_hue_range;
 	inRange(hsv_image, cv::Scalar(0, 100, 100), cv::Scalar(10, 255, 255), lower_red_hue_range);
 	inRange(hsv_image, cv::Scalar(160, 100, 100), cv::Scalar(179, 255, 255), upper_red_hue_range);
 
 	// Combine the above two images
-	addWeighted(lower_red_hue_range, 1.0, upper_red_hue_range, 1.0, 0.0, mask);
+	addWeighted(lower_red_hue_range, 1.0, upper_red_hue_range, 1.0, 0.0, redSurface);
 
-	//cvtColor(red_hue_image, mask, cv::COLOR_HSV);
 	//Mat blur;
 	//GaussianBlur(mask, blur, cv::Size(7, 7), 1.5, 1.5);
 	Mat tre;
-	threshold(mask, tre, 180, 255, CV_THRESH_BINARY);
+	threshold(redSurface, tre, 180, 255, CV_THRESH_BINARY);
 
 	Mat canny;
 	Canny(tre, canny, 0, 50, 5);
@@ -131,9 +132,6 @@ bool detectSurface() {
 
 	if (contours.size() == 0)
 		return false;
-
-	Mat dst;
-	src.copyTo(dst);
 
 	int largest_contour_index = 0;
 	int largest_area = 0;
@@ -163,7 +161,6 @@ bool detectSurface() {
 		return false;
 	}
 
-	Rect boundRect = boundingRect(contour);
 	vector<Point2f> quad_pts;
 	vector<Point2f> squre_pts;
 	quad_pts.push_back(Point2f(contours_poly[0].x, contours_poly[0].y));
@@ -177,42 +174,35 @@ bool detectSurface() {
 	squre_pts.push_back(Point2f(width, height));
 
 	Mat transmtx = getPerspectiveTransform(quad_pts, squre_pts);
-	warpPerspective(src, mask, transmtx, src.size());
+	warpPerspective(src, mask, transmtx, redSurface.size());
 
 	Point P1 = contours_poly[0];
 	Point P2 = contours_poly[1];
 	Point P3 = contours_poly[2];
 	Point P4 = contours_poly[3];
 
-	line(dst, P1, P2, Scalar(0, 0, 255), 1, CV_AA, 0);
-	line(dst, P2, P3, Scalar(0, 0, 255), 1, CV_AA, 0);
-	line(dst, P3, P4, Scalar(0, 0, 255), 1, CV_AA, 0);
-	line(dst, P4, P1, Scalar(0, 0, 255), 1, CV_AA, 0);
-
-	rectangle(dst, boundRect, Scalar(0, 255, 0), 1, 8, 0);
-
-	int width = 0;
-	int height = 0;
-	GetDesktopResolution(width, height);
+	line(src, P1, P2, Scalar(0, 0, 255), 1, CV_AA, 0);
+	line(src, P2, P3, Scalar(0, 0, 255), 1, CV_AA, 0);
+	line(src, P3, P4, Scalar(0, 0, 255), 1, CV_AA, 0);
+	line(src, P4, P1, Scalar(0, 0, 255), 1, CV_AA, 0);
+	Rect boundRect = boundingRect(contour);
+	rectangle(src, boundRect, Scalar(0, 255, 0), 1, 8, 0);
 
 	namedWindow("Mask", CV_WINDOW_NORMAL);
 	setWindowProperty("Mask", CV_WND_PROP_FULLSCREEN, CV_WINDOW_FULLSCREEN);
-
-	resize(mask, mask, cv::Size(width, height));
+	invert(mask);
 
 	imshow("Mask", mask);
-	imshow("dst", dst);
-
-	correct();
+	imshow("White Surface", src);
 
 	waitKey(0);
 
 	return true;
 }
 
-void correct() {
+void invert(Mat mat) {
 	// 1. Invert Mask
-	subtract(Scalar::all(255), mask, mask);
+	subtract(Scalar::all(255), mat, mat);
 }
 
 
@@ -251,6 +241,7 @@ bool fromCamera() {
 }
 
 bool fromFile() {
+	redSurface = imread("Images/test1_r.png", CV_LOAD_IMAGE_COLOR);   // Read the file
 	src = imread("Images/test1.png", CV_LOAD_IMAGE_COLOR);   // Read the file
 
 	if (!src.data)                              // Check for invalid input
