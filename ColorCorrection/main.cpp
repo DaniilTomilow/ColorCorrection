@@ -15,20 +15,24 @@ using namespace std;
 // OpenCV: http://docs.opencv.org/2.4/doc/tutorials/introduction/windows_visual_studio_Opencv/windows_visual_studio_Opencv.html
 // Kinect C++ Reference https://msdn.microsoft.com/en-us/library/hh855364.aspx
 
-bool fromCamera();
-bool fromFile();
-bool fromKinect();
+void fromCamera();
+void fromFile();
 
 bool detectSurface();
 void invert(Mat mat);
-bool exec(char code);
+
 
 int width = 640; // Kinect v1 height = 640
 int height = 480; // Kinect v1 width =  480
+
+int screenWidth = 1600;
+int screenHeight = 1200;
+
 unsigned int bufferSize = width * height * 4 * sizeof(unsigned char);
 
 Mat src;
 Mat redSurface;
+Mat orig;
 
 Mat mask;
 
@@ -37,35 +41,17 @@ int main(int argc, char** argv) {
 	// f = file
 	// k = kinect
 
-	char code = 'f'; 
+	char code = 'c'; 
 	bool d = false;
 
-	while (!d) {
-		if (exec(code)) {
-			d = detectSurface();
-		}
+	switch (code) {
+	case 'c': fromCamera(); break;
+	case 'f': fromFile(); break;
 	}
 	
 	return 0;
 }
 
-
-bool exec(char code) {
-	bool cmd = false;
-
-	switch (code) {
-	case 'c': cmd = fromCamera(); break;
-	case 'k': cmd = fromKinect(); break;
-	case 'f': cmd = fromFile(); break;
-	}
-
-	if (!cmd) {
-		cerr << "Could not open or find the image" << std::endl;
-		return false;
-	}
-
-	return true;
-}
 
 /**
 * Helper function to display text in the center of a contour
@@ -85,6 +71,7 @@ void setLabel(cv::Mat& im, const std::string label, std::vector<cv::Point>& cont
 	cv::putText(im, label, pt, fontface, scale, CV_RGB(0, 0, 0), thickness, 8);
 }
 
+
 // https://gist.github.com/DaniilTomilow/1088bca80f5a1f449f15
 void GetDesktopResolution(int& width, int& height)
 {
@@ -98,6 +85,44 @@ void GetDesktopResolution(int& width, int& height)
 	cout << "5: Width: " << width << "; height: " << height << '\n';
 }
 
+struct MonitorInfo {
+	unsigned monitor = 0;
+	unsigned primary = 0;
+	unsigned index = 0;
+	unsigned width;
+	unsigned height;
+	string displayName;
+};
+
+static BOOL CALLBACK 
+MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) {
+	MonitorInfo& info = *(MonitorInfo*) dwData;
+	MONITORINFOEX mi;
+	memset(&mi, 0, sizeof(MONITORINFOEX));
+	mi.cbSize = sizeof(MONITORINFOEX);
+
+	GetMonitorInfo(hMonitor, &mi);
+	string displayName = (const char*)mi.szDevice;
+	if (displayName.find(R"(\\.\DISPLAYV)") == 0) return TRUE;  //ignore pseudo-monitors
+	if (mi.dwFlags & MONITORINFOF_PRIMARY) info.primary = info.index;
+	if (info.monitor == info.index) {
+		info.width = lprcMonitor->right - lprcMonitor->left;
+		info.height = lprcMonitor->bottom - lprcMonitor->top;
+		info.displayName = displayName;
+	}
+
+	info.index++;
+	return TRUE;
+}
+
+void GetDesktopResolution6(unsigned monitor) {
+	MonitorInfo info;
+	info.monitor = monitor;
+
+	EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, (LPARAM)&info);
+
+	cout << "Name:" << info.displayName << "; Width: " << info.width << "; height " << info.height << endl;
+}
 
 /**
 * Detect projector surface.
@@ -168,13 +193,14 @@ bool detectSurface() {
 	quad_pts.push_back(Point2f(contours_poly[3].x, contours_poly[3].y));
 	quad_pts.push_back(Point2f(contours_poly[2].x, contours_poly[2].y));
 
+	Size s = src.size();
 	squre_pts.push_back(Point2f(0, 0));
-	squre_pts.push_back(Point2f(0, height));
-	squre_pts.push_back(Point2f(width, 0));
-	squre_pts.push_back(Point2f(width, height));
+	squre_pts.push_back(Point2f(0, s.height));
+	squre_pts.push_back(Point2f(s.width, 0));
+	squre_pts.push_back(Point2f(s.width, s.height));
 
 	Mat transmtx = getPerspectiveTransform(quad_pts, squre_pts);
-	warpPerspective(src, mask, transmtx, redSurface.size());
+	warpPerspective(src, mask, transmtx, s);
 
 	Point P1 = contours_poly[0];
 	Point P2 = contours_poly[1];
@@ -188,14 +214,19 @@ bool detectSurface() {
 	Rect boundRect = boundingRect(contour);
 	rectangle(src, boundRect, Scalar(0, 255, 0), 1, 8, 0);
 
-	namedWindow("Mask", CV_WINDOW_NORMAL);
-	setWindowProperty("Mask", CV_WND_PROP_FULLSCREEN, CV_WINDOW_FULLSCREEN);
+	resize(mask, mask, Size(screenWidth, screenHeight));
+
 	invert(mask);
 
-	imshow("Mask", mask);
+	int k = waitKey(30);
+
+	//imshow("Result", result);
+	imshow("Fullscreen", mask);
 	imshow("White Surface", src);
 
-	waitKey(0);
+	while (k != 27) {
+		k = waitKey(30);
+	}
 
 	return true;
 }
@@ -205,94 +236,107 @@ void invert(Mat mat) {
 	subtract(Scalar::all(255), mat, mat);
 }
 
+// Open White Fullscreen
+void OpenWhiteFullscreen() {
+	namedWindow("Fullscreen", CV_WINDOW_NORMAL);
+	setWindowProperty("Fullscreen", CV_WND_PROP_FULLSCREEN, CV_WINDOW_FULLSCREEN);
 
-bool fromCamera() {
+	GetDesktopResolution(screenWidth, screenHeight);
+
+	Mat white(screenWidth, screenHeight, CV_8UC3, Scalar(255, 255, 255));
+	imshow("Fullscreen", white);
+}
+
+void CaptureScreen() {
+
+	waitKey(30);
+}
+
+void fromCamera() {
+
+	OpenWhiteFullscreen();
+
 	// http://docs.opencv.org/master/d8/dfe/classcv_1_1VideoCapture.html
-	cv::VideoCapture cap(0); // open the default camera
-	if (!cap.isOpened())  // check if we succeeded
-	{
-		std::cerr << "Error : VideoCapture open default camera" << std::endl;
-		return false;
+	VideoCapture cap(CV_CAP_OPENNI); // Open Kinect Camera
+	if (!(cap.isOpened())) {
+		cap.open(0); // open the default camera
+		if (!cap.isOpened())  // check if we succeeded
+		{
+			std::cerr << "Error : VideoCapture open camera" << std::endl;
+			return;
+		}
 	}
+	
+	namedWindow("Camera", cv::WINDOW_AUTOSIZE);
 
-	cv::namedWindow("Camera", cv::WINDOW_AUTOSIZE);
-	int t = 7;
-	while(true)
+	bool showRedScreen = false;
+	bool captureRedAndWhite = false;
+	bool captureFinish = false;
+
+	int k = waitKey(30);
+
+	Mat red(screenWidth, screenHeight, CV_8UC3, Scalar(255, 255, 255));
+	copyMakeBorder(red, red, 50, 40, 40, 40, BORDER_CONSTANT, Scalar(0,0,255));
+	Mat white(screenWidth, screenHeight, CV_8UC3, Scalar(255, 255, 255));
+
+	while(k != 27) // ECS
 	{
 		Mat frame;
-		Mat g;
 		cap >> frame; // get a new frame from camera
 
 		imshow("Camera", frame);
 	
-		int k = cv::waitKey(30);
+		k = waitKey(30);
 
-		if (k == 27) break; // ECS
-		else if (k == 'c') {
-			resize(frame, src, cv::Size(width, height));
-			imwrite("Images/test2.png", src);
-			destroyWindow("Camera");
-			return true;
+		if (k == 13) { // Enter
+			showRedScreen = true;
+		}
+		else if (!captureRedAndWhite && k == 'c') {
+			showRedScreen = false;
+			captureRedAndWhite = true;
+		}
+
+		if (showRedScreen) {
+			imshow("Fullscreen", red);
+
+		} else if (captureRedAndWhite) {
+			// Store the red surface
+			cap >> frame; 
+			frame.copyTo(redSurface);
+
+			imshow("Fullscreen", white);
+			k = waitKey(300);
+
+			// Get Next Frame
+			cap >> frame;
+			cap >> frame;
+
+			frame.copyTo(src);
+
+			break;
 		}
 	}
 
-	// the camera will be deinitialized automatically in VideoCapture destructor
-	return false;
+	detectSurface();
 }
 
-bool fromFile() {
+void fromFile() {
 	redSurface = imread("Images/test1_r.png", CV_LOAD_IMAGE_COLOR);   // Read the file
 	src = imread("Images/test1.png", CV_LOAD_IMAGE_COLOR);   // Read the file
+	orig = imread("Images/jap_o.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
 
 	if (!src.data)                              // Check for invalid input
 	{
 		cout << "Could not open or find the image" << std::endl;
-		return false;
+		return;
 	}
 
-	return true;
-}
-
-// Get a working kinect sensor
-bool fromKinect() {
-	// Sensor
-	IKinectSensor* pSensor;
-	HRESULT hResult = S_OK;
-	hResult = GetDefaultKinectSensor(&pSensor);
-	if (FAILED(hResult)) {
-		std::cerr << "Error : GetDefaultKinectSensor" << std::endl;
-		return -1;
+	if (!orig.data)                              // Check for invalid input
+	{
+		cout << "Could not open or find the orig image" << std::endl;
+		return;
 	}
 
-	hResult = pSensor->Open();
-	if (FAILED(hResult)) {
-		std::cerr << "Error : IKinectSensor::Open()" << std::endl;
-		return -1;
-	}
+	detectSurface();
 
-	// Source
-	IColorFrameSource* pColorSource;
-	hResult = pSensor->get_ColorFrameSource(&pColorSource);
-	if (FAILED(hResult)) {
-		std::cerr << "Error : IKinectSensor::get_ColorFrameSource()" << std::endl;
-		return -1;
-	}
-
-	// Reader
-	IColorFrameReader* pColorReader;
-	hResult = pColorSource->OpenReader(&pColorReader);
-	if (FAILED(hResult)) {
-		std::cerr << "Error : IColorFrameSource::OpenReader()" << std::endl;
-		return -1;
-	}
-
-	//while (1)
-	//{
-		// Color Frame
-		IColorFrame* pColorFrame = nullptr;
-		hResult = pColorReader->AcquireLatestFrame(&pColorFrame);
-		if (SUCCEEDED(hResult)) {
-			pColorFrame->CopyConvertedFrameDataToArray(bufferSize, reinterpret_cast<BYTE*>(src.data), ColorImageFormat::ColorImageFormat_Bgra);
-		}
-	//}
 }
