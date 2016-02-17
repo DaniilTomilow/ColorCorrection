@@ -74,11 +74,11 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>D:\Software\OpenCV\opencv\build\include;C:\Program Files\Microsoft SDKs\Kinect\v2.0_1409\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\Software\OpenCV\opencv\build\include;C:\Program Files\Microsoft SDKs\Kinect\v1.8\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <AdditionalLibraryDirectories>D:\Software\OpenCV\opencv\vs2015build\lib\Debug;C:\Program Files\Microsoft SDKs\Kinect\v2.0_1409\Lib\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>Kinect20.lib;opencv_core300d.lib;opencv_highgui300d.lib;opencv_imgproc300d.lib;opencv_hal300d.lib;opencv_imgcodecs300d.lib;opencv_video300d.lib;opencv_videoio300d.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\Program Files\Microsoft SDKs\Kinect\v1.8\lib\x86;D:\Software\OpenCV\opencv\vs2015build\lib\Debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>Kinect10.lib;opencv_core300d.lib;opencv_highgui300d.lib;opencv_imgproc300d.lib;opencv_hal300d.lib;opencv_imgcodecs300d.lib;opencv_video300d.lib;opencv_videoio300d.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">

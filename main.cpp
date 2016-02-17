@@ -1,7 +1,8 @@
-#include <iostream>
-
-#include <Kinect.h>
+﻿#include <iostream>
 #include <opencv2/opencv.hpp>
+#include "Windows.h"
+#include "NuiApi.h"
+
 
 using namespace cv;
 using namespace std;
@@ -15,6 +16,7 @@ using namespace std;
 // OpenCV: http://docs.opencv.org/2.4/doc/tutorials/introduction/windows_visual_studio_Opencv/windows_visual_studio_Opencv.html
 // Kinect C++ Reference https://msdn.microsoft.com/en-us/library/hh855364.aspx
 
+int fromKinect();
 void fromCamera();
 void fromFile();
 
@@ -41,14 +43,17 @@ int main(int argc, char** argv) {
 	// f = file
 	// k = kinect
 
-	char code = 'c'; 
+	char code = 'k'; 
 	bool d = false;
 
 	switch (code) {
+	case 'k': fromKinect(); break;
 	case 'c': fromCamera(); break;
 	case 'f': fromFile(); break;
 	}
-	
+
+	while (waitKey() != 27) continue;
+
 	return 0;
 }
 
@@ -252,19 +257,110 @@ void CaptureScreen() {
 	waitKey(30);
 }
 
+int fromKinect() {
+	cv::setUseOptimized(true);
+
+	INuiSensor* pNuiSensor = nullptr;
+	NUI_IMAGE_RESOLUTION resolution = NUI_IMAGE_RESOLUTION_640x480;
+
+	HANDLE hNextColorFrameEvent;
+	HANDLE hColorStreamHandle = NULL;
+	HRESULT hr;
+
+	int iSensorCount = 0;
+	hr = NuiGetSensorCount(&iSensorCount);
+	if (FAILED(hr))
+	{
+		cerr << "No NuiSensor not found" << endl;
+		return hr;
+	}
+
+	// Look at each Kinect sensor
+	for (int i = 0; i < iSensorCount; ++i)
+	{
+		// Create the sensor so we can check status, if we can't create it, move on to the next
+		hr = NuiCreateSensorByIndex(i, &pNuiSensor);
+		if (FAILED(hr))
+		{
+			continue;
+		}
+
+		// Get the status of the sensor, and if connected, then we can initialize it
+		hr = pNuiSensor->NuiStatus();
+		if (S_OK == hr)
+		{
+			break;
+		}
+
+		// This sensor wasn't OK, so release it since we're not using it
+		pNuiSensor->Release();
+	}
+
+	if (nullptr == pNuiSensor)
+	{
+		cerr << "NuiSensor not created" << endl;
+		return E_FAIL;
+	}
+
+	// Initialize the Kinect and specify that we'll be using color
+	hr = pNuiSensor->NuiInitialize(NUI_INITIALIZE_FLAG_USES_COLOR);
+	if (FAILED(hr))
+	{
+		return E_FAIL;
+	}
+		// Create an event that will be signaled when color data is available
+	hNextColorFrameEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	// Open a color image stream to receive color frames
+	hr = pNuiSensor->NuiImageStreamOpen(
+		NUI_IMAGE_TYPE_COLOR,
+		resolution,
+		0,
+		2,
+		hNextColorFrameEvent,
+		&hColorStreamHandle);
+
+	if (FAILED(hr)) {
+		std::cerr << "Error : NuiImageStreamOpen\n";
+	}
+
+	unsigned long widthTmp, heightTmp;
+	NuiImageResolutionToSize(resolution, widthTmp, heightTmp);
+	UINT width = static_cast<UINT>(widthTmp);
+	UINT height = static_cast<UINT>(heightTmp);
+
+
+	while (1) {
+		NUI_IMAGE_FRAME nuiImage;
+		hr = pNuiSensor->NuiImageStreamGetNextFrame(hColorStreamHandle, 1000, &nuiImage);
+		if (FAILED(hr)) {
+			std::cerr << "Error : NuiImageStreamGetNextFrame\n";
+		}
+
+		INuiFrameTexture* texture = nuiImage.pFrameTexture;
+		NUI_LOCKED_RECT rect;
+		texture->LockRect(0, &rect, nullptr, 0);
+		cv::Mat cvImage(height, width, CV_8UC4, reinterpret_cast<unsigned char*>(rect.pBits));
+
+		cv::imshow("", cvImage);
+		cv::waitKey(30);
+
+		texture->UnlockRect(0);
+		pNuiSensor->NuiImageStreamReleaseFrame(hColorStreamHandle, &nuiImage);
+	}
+}
+
 void fromCamera() {
 
-	OpenWhiteFullscreen();
-
+	//OpenNI::initialize();
 	// http://docs.opencv.org/master/d8/dfe/classcv_1_1VideoCapture.html
 	VideoCapture cap(CV_CAP_OPENNI); // Open Kinect Camera
 	if (!(cap.isOpened())) {
-		cap.open(0); // open the default camera
-		if (!cap.isOpened())  // check if we succeeded
-		{
+		//cap.open(0); // open the default camera
+		//if (!cap.isOpened())  // check if we succeeded
+	//	{
 			std::cerr << "Error : VideoCapture open camera" << std::endl;
 			return;
-		}
+	//	}
 	}
 	
 	namedWindow("Camera", cv::WINDOW_AUTOSIZE);
@@ -276,7 +372,7 @@ void fromCamera() {
 	int k = waitKey(30);
 
 	Mat red(screenWidth, screenHeight, CV_8UC3, Scalar(255, 255, 255));
-	copyMakeBorder(red, red, 50, 40, 40, 40, BORDER_CONSTANT, Scalar(0,0,255));
+	cv::copyMakeBorder(red, red, 50, 40, 40, 40, BORDER_CONSTANT, Scalar(0,0,255));
 	Mat white(screenWidth, screenHeight, CV_8UC3, Scalar(255, 255, 255));
 
 	while(k != 27) // ECS
@@ -284,7 +380,7 @@ void fromCamera() {
 		Mat frame;
 		cap >> frame; // get a new frame from camera
 
-		imshow("Camera", frame);
+		cv::imshow("Camera", frame);
 	
 		k = waitKey(30);
 
@@ -297,7 +393,7 @@ void fromCamera() {
 		}
 
 		if (showRedScreen) {
-			imshow("Fullscreen", red);
+			cv::imshow("Fullscreen", red);
 
 		} else if (captureRedAndWhite) {
 			// Store the red surface
