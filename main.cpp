@@ -107,16 +107,32 @@ void GetDesktopResolution6(unsigned monitor) {
 	cout << "Name:" << info.displayName << "; Width: " << info.width << "; height " << info.height << endl;
 }
 
-void division(Mat* o, Mat *s, Mat *d)
+
+//
+// Fix orig with add invert mask
+// 
+void adding(const Mat& o, const Mat& s, const Mat& d) {
+	// Invert the mask
+	Mat mask = s.clone();
+	// invert mask
+	bitwise_not(mask, mask);
+
+	add(orig, mask, d);
+}
+
+//
+// Second Approach: calculate the right color by divide
+//
+void division(const Mat& o, const Mat& s, const Mat& d)
 {
-	for (int y = 0; y < o->size().height; ++y)
+	for (int y = 0; y < o.size().height; ++y)
 	{
-		for (int x = 0; x < o->size().width; ++x)
+		for (int x = 0; x < o.size().width; ++x)
 		{	
-			for (int c = 0; c < o->channels(); ++c)
+			for (int c = 0; c < o.channels(); ++c)
 			{
-				unsigned char oPx = o->data[y * o->step + x * o->channels() + c];
-				unsigned char sPx = s->data[y * s->step + x * s->channels() + c];
+				unsigned char oPx = o.data[y * o.step + x * o.channels() + c];
+				unsigned char sPx = s.data[y * s.step + x * s.channels() + c];
 
 				// No Zero division
 				if (sPx == 0) sPx = 1;
@@ -125,30 +141,7 @@ void division(Mat* o, Mat *s, Mat *d)
 
 				unsigned char r = (s > 1.0 ? 1.0 : s) * 255;
 
-				d->data[y * d->step + d->channels() * x + c] = r;
-			}
-		}
-	}
-}
-
-//Extrema
-void extrema(Mat* o, unsigned char tresh)
-{
-	for (int y = 0; y < o->size().height; ++y)
-	{
-		for (int x = 0; x < o->size().width; ++x)
-		{
-			bool found = false;
-			for (int c = 0; c < o->channels(); ++c)
-			{
-				if (o->data[y * o->step + o->channels() * x + c] < tresh) found = true;
-			}
-
-			// Mak with green color
-			if (found) {
-				o->data[y * o->step + o->channels() * x + 0] = 0; // B
-				o->data[y * o->step + o->channels() * x + 1] = 255; // G
-				o->data[y * o->step + o->channels() * x + 2] = 0; // R
+				d.data[y * d.step + d.channels() * x + c] = r;
 			}
 		}
 	}
@@ -164,8 +157,8 @@ void extrema(Mat* o, unsigned char tresh)
 bool detectSurface() {
 	//orig = imread("Images/jap_o.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
 	// medianBlur(bgr_image, bgr_image, 3);
-	imwrite("tt_01.jpg", src);
-	imwrite("tr_01.jpg", redSurface);
+	//imwrite("tt_01.jpg", src);
+	//imwrite("tr_01.jpg", redSurface);
 
 	// Convert to HSV
 	Mat hsv_image;
@@ -220,8 +213,6 @@ bool detectSurface() {
 		return false;
 	}
 
-	vector<Point2f> quad_pts;
-	vector<Point2f> squre_pts;
 
 	// Reorder Shape
 	Point t1, t2, b1, b2;
@@ -252,56 +243,35 @@ bool detectSurface() {
 	|         |
 	1rd-------3th
 	*/
-
-	quad_pts.push_back(Point2f(bl.x, bl.y));
-	quad_pts.push_back(Point2f(tl.x, tl.y));
-	quad_pts.push_back(Point2f(br.x, br.y));
-	quad_pts.push_back(Point2f(tr.x, tr.y));
-
 	Size s = src.size();
-	squre_pts.push_back(Point2f(0, 0));
-	squre_pts.push_back(Point2f(0, s.height));
-	squre_pts.push_back(Point2f(s.width, 0));
-	squre_pts.push_back(Point2f(s.width, s.height));
+	vector<Point2f> quad_pts  { Point2f(bl.x, bl.y), Point2f(tl.x, tl.y),  Point2f(br.x, br.y), Point2f(tr.x, tr.y) };
+	vector<Point2f> squre_pts { Point2f(0, 0),       Point2f(0, s.height), Point2f(s.width, 0), Point2f(s.width, s.height) };
 
 	Mat transmtx = getPerspectiveTransform(quad_pts, squre_pts);
 	warpPerspective(src, surface, transmtx, s);
 
-	Point P1 = contours_poly[0];
-	Point P2 = contours_poly[1];
-	Point P3 = contours_poly[2];
-	Point P4 = contours_poly[3];
-
-	line(src, P1, P2, Scalar(0, 0, 255), 1, CV_AA, 0);
-	line(src, P2, P3, Scalar(0, 0, 255), 1, CV_AA, 0);
-	line(src, P3, P4, Scalar(0, 0, 255), 1, CV_AA, 0);
-	line(src, P4, P1, Scalar(0, 0, 255), 1, CV_AA, 0);
-
-	Rect boundRect = boundingRect(contour);
-	rectangle(src, boundRect, Scalar(0, 255, 0), 1, 8, 0);
+	line(src, contours_poly[0], contours_poly[1], Scalar(0, 0, 255), 1, CV_AA, 0);
+	line(src, contours_poly[1], contours_poly[2], Scalar(0, 0, 255), 1, CV_AA, 0);
+	line(src, contours_poly[2], contours_poly[3], Scalar(0, 0, 255), 1, CV_AA, 0);
+	line(src, contours_poly[3], contours_poly[0], Scalar(0, 0, 255), 1, CV_AA, 0);
+	rectangle(src, boundingRect(contour), Scalar(0, 255, 0), 1, 8, 0);
 
 	resize(surface, surface, Size(screenWidth, screenHeight));
-	//cvtColor(orig, orig, CV_BGR2BGRA);
 	resize(orig, orig, Size(screenWidth, screenHeight));
 	
-
-	// Fix orig with add invert mask
-	// invert mask
-	Mat mask = surface.clone();
-	bitwise_not(mask, mask);
-
+	// Approach 1
 	Mat fix1(screenHeight, screenWidth, CV_8UC3, Scalar(255, 255, 255));
-	add(orig, mask, fix1);
-
-	imshow("Fix1", fix1);
-
-	Mat fix2(screenHeight, screenWidth, CV_8UC3, Scalar(255, 255, 255));
+	adding(orig, surface, fix1);
+	//imshow("Fix1", fix1);
 
 	// 2 approach. Division.
-	division(&orig, &surface, &fix2);
+	Mat fix2(screenHeight, screenWidth, CV_8UC3, Scalar(255, 255, 255));
+	division(orig, surface, fix2);
+	//imshow("Fix2", fix2);
 
-	imshow("Fix2", fix2);
 
+	imshow("Fullscreen", fix1);
+	moveWindow("Fullscreen", 0, 0);
 	int k = waitKey(30);
 	while (k != 27) {
 		k = waitKey(30);
@@ -309,9 +279,8 @@ bool detectSurface() {
 			imshow("Fullscreen", fix1);
 		}
 
-
 		if (k == 'd') {
-			imshow("Fullscreen", orig);
+			imshow("Fullscreen", fix2);
 		}
 	}
 
