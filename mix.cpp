@@ -3,7 +3,9 @@
 
 #define PI 3.14159265
 
+
 using namespace std;
+using namespace cv;
 
 /**
 * RGB to HSL
@@ -252,8 +254,95 @@ void mix(int rgb1[], int rgb2[], int result[]) {
 	HSLToRGB(hsl, result);
 }
 
+void MixImage(Mat* src, Mat* overlay, const Point& location) {
+
+	for (int y = max(location.y, 0); y < src->rows; ++y)
+	{
+		int fY = y - location.y;
+
+		if (fY >= overlay->rows)
+			break;
+
+		for (int x = max(location.x, 0); x < src->cols; ++x)
+		{
+			int fX = x - location.x;
+
+			if (fX >= overlay->cols)
+				break;
+
+			for (int c = 0; c < 3; ++c)
+			{
+				// Get pixel
+				unsigned char overlayPx = overlay->data[fY * overlay->step + fX * overlay->channels() + c];
+				unsigned char srcPx = src->data[y * src->step + x * src->channels() + c];
+
+				//src->data[y * src->step + src->channels() * x + c] = mix(srcPx, overlayPx);
+				// Subtractive Color Mixing
+				//src->data[y * src->step + src->channels() * x + c] = 255 - ((255 - srcPx) + (255 - overlayPx));
+
+				//src->data[y * src->step + src->channels() * x + c] = min(srcPx + overlayPx, 255);
+
+				// Simulate Lighting
+				//src->data[y * src->step + src->channels() * x + c] = sqrt((overlayPx * overlayPx)) + ((srcPx * srcPx));
+			}
+		}
+
+	}
+}
+
+// http://answers.opencv.org/question/73016/how-to-overlay-an-png-image-with-alpha-channel-to-another-png/
+void overlayImage(Mat* src, Mat* overlay, const Point& location)
+{
+	for (int y = max(location.y, 0); y < src->rows; ++y)
+	{
+		int fY = y - location.y;
+
+		if (fY >= overlay->rows)
+			break;
+
+		for (int x = max(location.x, 0); x < src->cols; ++x)
+		{
+			int fX = x - location.x;
+
+			if (fX >= overlay->cols)
+				break;
+
+			double opacity = ((double)overlay->data[fY * overlay->step + fX * overlay->channels() + 3]) / 255;
+
+			for (int c = 0; opacity > 0 && c < src->channels(); ++c)
+			{
+				unsigned char overlayPx = overlay->data[fY * overlay->step + fX * overlay->channels() + c];
+				unsigned char srcPx = src->data[y * src->step + x * src->channels() + c];
+				src->data[y * src->step + src->channels() * x + c] = srcPx * (1. - opacity) + overlayPx * opacity;
+			}
+		}
+	}
+}
 
 void testMix() {
+
+	// Mask with alpha channel
+	/*
+	Mat surface = mask.clone();
+	imshow("surface", surface);
+	Mat tmp, alpha;
+	cvtColor(mask, tmp, CV_BGRA2GRAY);
+	threshold(tmp, alpha, 100, 255, THRESH_BINARY);
+
+	Mat rgb[4];
+	split(mask, rgb);
+
+	Mat white(screenHeight, screenWidth, CV_8UC4, Scalar(255, 255, 255, 1));
+	Mat dst(screenHeight, screenWidth, CV_8UC4, Scalar(255, 255, 255, 1));
+
+	Mat rgba[4] = { rgb[0],rgb[1],rgb[2], alpha };
+	merge(rgba, 4, dst);
+
+	overlayImage(&white, &dst, Point());
+	//MixImage(&surface, &white, Point());
+
+	*/
+
 	// http://www.enchantedlearning.com/art/Colormixing.shtml
 	// http://stackoverflow.com/questions/6130621/algorithm-for-finding-the-color-between-two-others-in-the-colorspace-of-painte
 	//http://lodev.org/cgtutor/color.html

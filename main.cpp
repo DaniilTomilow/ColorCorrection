@@ -24,8 +24,8 @@ bool detectSurface();
 int width = 640; // Kinect v1 height = 640
 int height = 480; // Kinect v1 width =  480
 
-int screenWidth = 1600;
-int screenHeight = 1200;
+int screenWidth = 640; //1600;
+int screenHeight = 480; //1200;
 
 unsigned int bufferSize = width * height * 4 * sizeof(unsigned char);
 
@@ -107,105 +107,52 @@ void GetDesktopResolution6(unsigned monitor) {
 	cout << "Name:" << info.displayName << "; Width: " << info.width << "; height " << info.height << endl;
 }
 
-void MixImage(Mat* src, Mat* overlay, const Point& location) {
-
-	for (int y = max(location.y, 0); y < src->rows; ++y)
-	{
-		int fY = y - location.y;
-
-		if (fY >= overlay->rows)
-			break;
-
-		for (int x = max(location.x, 0); x < src->cols; ++x)
-		{
-			int fX = x - location.x;
-
-			if (fX >= overlay->cols)
-				break;
-
-			for (int c = 0; c < 3; ++c)
-			{
-				// Get pixel
-				unsigned char overlayPx = overlay->data[fY * overlay->step + fX * overlay->channels() + c];
-				unsigned char srcPx = src->data[y * src->step + x * src->channels() + c];
-
-				//src->data[y * src->step + src->channels() * x + c] = mix(srcPx, overlayPx);
-				// Subtractive Color Mixing
-				//src->data[y * src->step + src->channels() * x + c] = 255 - ((255 - srcPx) + (255 - overlayPx));
-
-				//src->data[y * src->step + src->channels() * x + c] = min(srcPx + overlayPx, 255);
-
-				// Simulate Lighting
-				//src->data[y * src->step + src->channels() * x + c] = sqrt((overlayPx * overlayPx)) + ((srcPx * srcPx));
-			}
-		}
-
-	}
- }
-
-// http://answers.opencv.org/question/73016/how-to-overlay-an-png-image-with-alpha-channel-to-another-png/
-void overlayImage(Mat* src, Mat* overlay, const Point& location)
+void division(Mat* o, Mat *s, Mat *d)
 {
-	for (int y = max(location.y, 0); y < src->rows; ++y)
+	for (int y = 0; y < o->size().height; ++y)
 	{
-		int fY = y - location.y;
-
-		if (fY >= overlay->rows)
-			break;
-
-		for (int x = max(location.x, 0); x < src->cols; ++x)
-		{
-			int fX = x - location.x;
-
-			if (fX >= overlay->cols)
-				break;
-
-			double opacity = ((double)overlay->data[fY * overlay->step + fX * overlay->channels() + 3]) / 255;
-
-			for (int c = 0; opacity > 0 && c < src->channels(); ++c)
-			{
-				unsigned char overlayPx = overlay->data[fY * overlay->step + fX * overlay->channels() + c];
-				unsigned char srcPx = src->data[y * src->step + x * src->channels() + c];
-				src->data[y * src->step + src->channels() * x + c] = srcPx * (1. - opacity) + overlayPx * opacity;
-			}
-		}
-	}
-}
-
-void pixM(Mat* src)
-{
-	for (int y = 0; y < src->size().height; ++y)
-	{
-		for (int x = 0; x < src->size().width; ++x)
+		for (int x = 0; x < o->size().width; ++x)
 		{	
-				src->at<Vec3s>(y, x) *= 255;
+			for (int c = 0; c < o->channels(); ++c)
+			{
+				unsigned char oPx = o->data[y * o->step + x * o->channels() + c];
+				unsigned char sPx = s->data[y * s->step + x * s->channels() + c];
+
+				// No Zero division
+				if (sPx == 0) sPx = 1;
+				float s = ((float)oPx) / ((float)sPx);
+				// unsigned short s = (oPx * 255) / sPx;
+
+				unsigned char r = (s > 1.0 ? 1.0 : s) * 255;
+
+				d->data[y * d->step + d->channels() * x + c] = r;
+			}
 		}
 	}
 }
 
-// src / src2
-void pixD(Mat* src, Mat* src2)
+//Extrema
+void extrema(Mat* o, unsigned char tresh)
 {
-	for (int y = 0; y < src->size().height; ++y)
+	for (int y = 0; y < o->size().height; ++y)
 	{
-		for (int x = 0; x < src->size().width; ++x)
+		for (int x = 0; x < o->size().width; ++x)
 		{
-			// TODO
-			Vec3s s = src->at<Vec3s>(y, x);
-			Vec3s s2 = src2->at<Vec3s>(y, x);
-			
-			Vec3s d(0,0,0);
-			// Check divide zero
-			d[0] = s2[0] == 0 ? 0 : s[0] / s2[0];
-			d[1] = s2[1] == 0 ? 0 : s[1] / s2[2];
-			d[2] = s2[2] == 0 ? 0 : s[2] / s2[1];
-			
-			src2->at<Vec3s>(y, x) = d;
+			bool found = false;
+			for (int c = 0; c < o->channels(); ++c)
+			{
+				if (o->data[y * o->step + o->channels() * x + c] < tresh) found = true;
+			}
+
+			// Mak with green color
+			if (found) {
+				o->data[y * o->step + o->channels() * x + 0] = 0; // B
+				o->data[y * o->step + o->channels() * x + 1] = 255; // G
+				o->data[y * o->step + o->channels() * x + 2] = 0; // R
+			}
 		}
 	}
 }
-
-
 
 
 /**
@@ -215,8 +162,10 @@ void pixD(Mat* src, Mat* src2)
 * https://github.com/bsdnoobz/opencv-code/blob/master/quad-segmentation.cpp
 */
 bool detectSurface() {
-	orig = imread("Images/jap_o.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
+	//orig = imread("Images/jap_o.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
 	// medianBlur(bgr_image, bgr_image, 3);
+	imwrite("tt_01.jpg", src);
+	imwrite("tr_01.jpg", redSurface);
 
 	// Convert to HSV
 	Mat hsv_image;
@@ -273,10 +222,41 @@ bool detectSurface() {
 
 	vector<Point2f> quad_pts;
 	vector<Point2f> squre_pts;
-	quad_pts.push_back(Point2f(contours_poly[0].x, contours_poly[0].y));
-	quad_pts.push_back(Point2f(contours_poly[1].x, contours_poly[1].y));
-	quad_pts.push_back(Point2f(contours_poly[3].x, contours_poly[3].y));
-	quad_pts.push_back(Point2f(contours_poly[2].x, contours_poly[2].y));
+
+	// Reorder Shape
+	Point t1, t2, b1, b2;
+	for (int i = 0; i < 4; i++) {
+		if (contours_poly[i].y >= t1.y && contours_poly[i] != t2)
+			t1 = contours_poly[i];
+		if (contours_poly[i].y >= t2.y && contours_poly[i] != t1)
+			t2 = contours_poly[i];
+	}
+
+	for (int i = 0; i < 4; i++) {
+		if (contours_poly[i] != t1 && contours_poly[i] != t2 && b1 != b2)
+			b1 = contours_poly[i];
+		if (contours_poly[i] != t1 && contours_poly[i] != t2 && contours_poly[i] != b1)
+			b2 = contours_poly[i];
+	}
+
+	Point tl, tr, br, bl;
+	if (t1.x < t2.x) { tl = t1; tr = t2; }
+	else { tl = t2; tr = t1; }
+	if (b1.x < b2.x) { bl = b1; br = b2; }
+	else { bl = b2; br = b1; }
+
+	/** Order WTF
+	2st-------4nd
+	|         |
+	|         |
+	|         |
+	1rd-------3th
+	*/
+
+	quad_pts.push_back(Point2f(bl.x, bl.y));
+	quad_pts.push_back(Point2f(tl.x, tl.y));
+	quad_pts.push_back(Point2f(br.x, br.y));
+	quad_pts.push_back(Point2f(tr.x, tr.y));
 
 	Size s = src.size();
 	squre_pts.push_back(Point2f(0, 0));
@@ -304,54 +284,23 @@ bool detectSurface() {
 	//cvtColor(orig, orig, CV_BGR2BGRA);
 	resize(orig, orig, Size(screenWidth, screenHeight));
 	
-	// Mask with alpha channel
-	/*
-	Mat surface = mask.clone();
-	imshow("surface", surface);
-	Mat tmp, alpha;
-	cvtColor(mask, tmp, CV_BGRA2GRAY);
-	threshold(tmp, alpha, 100, 255, THRESH_BINARY);
-
-	Mat rgb[4];
-	split(mask, rgb);
-
-	Mat white(screenHeight, screenWidth, CV_8UC4, Scalar(255, 255, 255, 1));
-	Mat dst(screenHeight, screenWidth, CV_8UC4, Scalar(255, 255, 255, 1));
-	
-	Mat rgba[4] = { rgb[0],rgb[1],rgb[2], alpha };
-	merge(rgba, 4, dst); 
-	
-	overlayImage(&white, &dst, Point());
-	//MixImage(&surface, &white, Point());
-
-	*/
 
 	// Fix orig with add invert mask
 	// invert mask
 	Mat mask = surface.clone();
 	bitwise_not(mask, mask);
 
-	Mat fix1(screenHeight, screenWidth,CV_8UC3, Scalar(255, 255, 255, 1));
+	Mat fix1(screenHeight, screenWidth, CV_8UC3, Scalar(255, 255, 255));
 	add(orig, mask, fix1);
 
 	imshow("Fix1", fix1);
 
-	Mat fix2(screenHeight, screenWidth, CV_16UC3, Scalar(255, 255, 255, 1));
-	Mat o(screenHeight, screenWidth, CV_16UC3, Scalar(255, 255, 255, 1));
+	Mat fix2(screenHeight, screenWidth, CV_8UC3, Scalar(255, 255, 255));
 
-	surface.convertTo(fix2, CV_16UC3);
-	orig.convertTo(o, CV_16UC3);
+	// 2 approach. Division.
+	division(&orig, &surface, &fix2);
 
-	pixM(&fix2);
-	pixM(&o);
-
-	o = o.reshape(1,);
-
-	//pixD(&o, &fix2);
-
-	imshow("Fix2", o);
-	
-
+	imshow("Fix2", fix2);
 
 	int k = waitKey(30);
 	while (k != 27) {
@@ -518,16 +467,21 @@ int fromKinect(bool kinect) {
 	Mat red(screenWidth, screenHeight, CV_8UC3, Scalar(0, 0, 0));
 	cv::copyMakeBorder(red, red, 60, 60, 20, 20, BORDER_CONSTANT, Scalar(0, 0, 255));
 	Mat white(screenWidth, screenHeight, CV_8UC3, Scalar(255, 255, 255));
+	Mat extr;
+	Mat frame;
 
 	int k = waitKey(30);
 	while (k != 27) {
-		Mat frame;
+		
 		if(kinect) // get a new frame from Kinect
 		  frame = NextKinectFrame(pNuiSensor, hColorStreamHandle);
 		else // get a new frame from camera
 		  cap >> frame;
 	
 		// open camera view
+		
+		//frame.copyTo(extr);
+		//extrema(&extr, -100);
 		imshow("Camera", frame);
 
 		k = waitKey(30);
@@ -551,8 +505,10 @@ int fromKinect(bool kinect) {
 			k = waitKey(300);
 
 			// Get Next Frame
-			if (kinect) // get a new frame from Kinect
+			if (kinect) {// get a new frame from Kinect
 				frame = NextKinectFrame(pNuiSensor, hColorStreamHandle);
+				cvtColor(frame, frame, cv::COLOR_BGRA2BGR);
+			}
 			else // get a new frame from camera
 				cap >> frame;
 
@@ -572,8 +528,9 @@ int fromKinect(bool kinect) {
 }
 
 void fromFile() {
-	redSurface = imread("Images/test1_r.png", CV_LOAD_IMAGE_COLOR);   // Read the file
-	src = imread("Images/test1.png", CV_LOAD_IMAGE_COLOR);   // Read the file
+	redSurface = imread("Images/01_tr.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
+	src = imread("Images/01_tt.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
+
 	orig = imread("Images/jap_o.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
 
 	if (!src.data)                              // Check for invalid input
