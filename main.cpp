@@ -16,10 +16,10 @@ using namespace std;
 // OpenCV: http://docs.opencv.org/2.4/doc/tutorials/introduction/windows_visual_studio_Opencv/windows_visual_studio_Opencv.html
 // Kinect C++ Reference https://msdn.microsoft.com/en-us/library/hh855364.aspx
 
-int fromKinect(bool kinect);
+int FromVideoStream(bool kinect);
 void fromFile();
 
-bool detectSurface();
+bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface);
 
 int width = 640; // Kinect v1 height = 640
 int height = 480; // Kinect v1 width =  480
@@ -29,12 +29,7 @@ int screenHeight = 480; //1200;
 
 unsigned int bufferSize = width * height * 4 * sizeof(unsigned char);
 
-Mat src;
-Mat redSurface;
 Mat orig;
-
-Mat surface;
-
 
 /**
 * Helper function to display text in the center of a contour
@@ -111,7 +106,7 @@ void GetDesktopResolution6(unsigned monitor) {
 //
 // Fix orig with add invert mask
 // 
-void adding(const Mat& o, const Mat& s, const Mat& d) {
+void AddingMask(const Mat& o, const Mat& s, const Mat& d) {
 	// Invert the mask
 	Mat mask = s.clone();
 	// invert mask
@@ -123,7 +118,7 @@ void adding(const Mat& o, const Mat& s, const Mat& d) {
 //
 // Second Approach: calculate the right color by divide
 //
-void division(const Mat& o, const Mat& s, const Mat& d)
+void Division(const Mat& o, const Mat& s, const Mat& d)
 {
 	for (int y = 0; y < o.size().height; ++y)
 	{
@@ -147,19 +142,54 @@ void division(const Mat& o, const Mat& s, const Mat& d)
 	}
 }
 
+bool ColorCorrection(Mat& src, Mat& redSurface) {
 
-/**
-* Detect projector surface.
-* Keystone korrection.
-* https://github.com/bsdnoobz/opencv-code/blob/master/shape-detect.cpp
-* https://github.com/bsdnoobz/opencv-code/blob/master/quad-segmentation.cpp
-*/
-bool detectSurface() {
-	//orig = imread("Images/jap_o.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
-	// medianBlur(bgr_image, bgr_image, 3);
-	//imwrite("tt_01.jpg", src);
-	//imwrite("tr_01.jpg", redSurface);
+	Mat surface;
+	if (!DetectSurface(src, redSurface, surface)) {
+		// No surface found
+		return false;
+	}
 
+	// TODO: this is just test
+	orig = imread("Images/jap_o.jpg", CV_LOAD_IMAGE_COLOR);
+
+	// Resize surface and orig to Window Size
+	resize(surface, surface, Size(screenWidth, screenHeight));
+	resize(orig, orig, Size(screenWidth, screenHeight));
+
+	// Approach 1
+	Mat fix1(screenHeight, screenWidth, CV_8UC3, Scalar(255, 255, 255));
+	AddingMask(orig, surface, fix1);
+
+	// 2 approach. Division.
+	Mat fix2(screenHeight, screenWidth, CV_8UC3, Scalar(255, 255, 255));
+	Division(orig, surface, fix2);
+
+	imshow("Fullscreen", fix1);
+	moveWindow("Fullscreen", 0, 0);
+
+	int k = waitKey(30);
+	while (k != 27) {
+		k = waitKey(30);
+		if (k == 's') {
+			imshow("Fullscreen", fix1);
+		}
+
+		if (k == 'd') {
+			imshow("Fullscreen", fix2);
+		}
+	}
+
+	return true;
+}
+
+// 
+// Detect projector surface.
+// Keystone korrection.
+// https://github.com/bsdnoobz/opencv-code/blob/master/shape-detect.cpp
+// https://github.com/bsdnoobz/opencv-code/blob/master/quad-segmentation.cpp
+// 
+bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface) {
 	// Convert to HSV
 	Mat hsv_image;
 	cvtColor(redSurface, hsv_image, cv::COLOR_BGR2HSV);
@@ -214,7 +244,7 @@ bool detectSurface() {
 	}
 
 
-	// Reorder Shape
+	// Reorder Points
 	Point t1, t2, b1, b2;
 	for (int i = 0; i < 4; i++) {
 		if (contours_poly[i].y >= t1.y && contours_poly[i] != t2)
@@ -250,39 +280,14 @@ bool detectSurface() {
 	Mat transmtx = getPerspectiveTransform(quad_pts, squre_pts);
 	warpPerspective(src, surface, transmtx, s);
 
+	// Draw contour line
 	line(src, contours_poly[0], contours_poly[1], Scalar(0, 0, 255), 1, CV_AA, 0);
 	line(src, contours_poly[1], contours_poly[2], Scalar(0, 0, 255), 1, CV_AA, 0);
 	line(src, contours_poly[2], contours_poly[3], Scalar(0, 0, 255), 1, CV_AA, 0);
 	line(src, contours_poly[3], contours_poly[0], Scalar(0, 0, 255), 1, CV_AA, 0);
+
+	// Draw rectangle
 	rectangle(src, boundingRect(contour), Scalar(0, 255, 0), 1, 8, 0);
-
-	resize(surface, surface, Size(screenWidth, screenHeight));
-	resize(orig, orig, Size(screenWidth, screenHeight));
-	
-	// Approach 1
-	Mat fix1(screenHeight, screenWidth, CV_8UC3, Scalar(255, 255, 255));
-	adding(orig, surface, fix1);
-	//imshow("Fix1", fix1);
-
-	// 2 approach. Division.
-	Mat fix2(screenHeight, screenWidth, CV_8UC3, Scalar(255, 255, 255));
-	division(orig, surface, fix2);
-	//imshow("Fix2", fix2);
-
-
-	imshow("Fullscreen", fix1);
-	moveWindow("Fullscreen", 0, 0);
-	int k = waitKey(30);
-	while (k != 27) {
-		k = waitKey(30);
-		if (k == 's') {
-			imshow("Fullscreen", fix1);
-		}
-
-		if (k == 'd') {
-			imshow("Fullscreen", fix2);
-		}
-	}
 
 	return true;
 }
@@ -291,16 +296,12 @@ bool detectSurface() {
 // Open White Fullscreen
 void OpenWhiteFullscreen() {
 	namedWindow("Fullscreen", CV_WINDOW_NORMAL);
-	//setWindowProperty("Fullscreen", CV_WND_PROP_FULLSCREEN, CV_WINDOW_FULLSCREEN);
+	setWindowProperty("Fullscreen", CV_WND_PROP_FULLSCREEN, CV_WINDOW_FULLSCREEN);
 
 	GetDesktopResolution(screenWidth, screenHeight);
 
-	Mat white(screenWidth, screenHeight, CV_8UC4, Scalar(255, 255, 255, 1));
+	Mat white(screenWidth, screenHeight, CV_8UC3, Scalar(255, 255, 255));
 	imshow("Fullscreen", white);
-}
-
-void captureSurface(Mat img) {
-
 }
 
 Mat NextKinectFrame(INuiSensor* pNuiSensor, HANDLE hColorStreamHandle) {
@@ -402,7 +403,7 @@ InitKinect(INuiSensor** sensor, HANDLE* hColorStreamHandle) {
 }
 
 
-int fromKinect(bool kinect) {
+int FromVideoStream(bool kinect) {
 	// Kinect
 	HANDLE hColorStreamHandle = NULL;
 	INuiSensor* pNuiSensor = nullptr;
@@ -426,8 +427,9 @@ int fromKinect(bool kinect) {
 	}
 	
 	OpenWhiteFullscreen();
+
+	// Preview
 	namedWindow("Camera", cv::WINDOW_AUTOSIZE);
-	orig = imread("Images/jap_o.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
 
 	bool showRedScreen = false;
 	bool captureRedAndWhite = false;
@@ -436,8 +438,8 @@ int fromKinect(bool kinect) {
 	Mat red(screenWidth, screenHeight, CV_8UC3, Scalar(0, 0, 0));
 	cv::copyMakeBorder(red, red, 60, 60, 20, 20, BORDER_CONSTANT, Scalar(0, 0, 255));
 	Mat white(screenWidth, screenHeight, CV_8UC3, Scalar(255, 255, 255));
-	Mat extr;
-	Mat frame;
+	
+	Mat frame, src, redSurface;
 
 	int k = waitKey(30);
 	while (k != 27) {
@@ -448,9 +450,6 @@ int fromKinect(bool kinect) {
 		  cap >> frame;
 	
 		// open camera view
-		
-		//frame.copyTo(extr);
-		//extrema(&extr, -100);
 		imshow("Camera", frame);
 
 		k = waitKey(30);
@@ -476,6 +475,7 @@ int fromKinect(bool kinect) {
 			// Get Next Frame
 			if (kinect) {// get a new frame from Kinect
 				frame = NextKinectFrame(pNuiSensor, hColorStreamHandle);
+				// Kinect has alpha channel
 				cvtColor(frame, frame, cv::COLOR_BGRA2BGR);
 			}
 			else // get a new frame from camera
@@ -483,7 +483,7 @@ int fromKinect(bool kinect) {
 
 			frame.copyTo(src);
 
-			if (detectSurface()) {
+			if (ColorCorrection(src, redSurface)) {
 				break;
 			}
 			else {
@@ -496,9 +496,9 @@ int fromKinect(bool kinect) {
 	return 0;
 }
 
-void fromFile() {
-	redSurface = imread("Images/01_tr.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
-	src = imread("Images/01_tt.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
+void FromFile() {
+	Mat redSurface = imread("Images/01_tr.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
+	Mat src = imread("Images/01_tt.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
 
 	orig = imread("Images/jap_o.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
 
@@ -514,7 +514,7 @@ void fromFile() {
 		return;
 	}
 
-	detectSurface();
+	ColorCorrection(src, redSurface);
 }
 
 
@@ -526,10 +526,11 @@ int main(int argc, char** argv) {
 	char code = 'f';
 	bool d = false;
 
+	// Open From
 	switch (code) {
-	case 'k': fromKinect(true); break;
-	case 'c': fromKinect(false); break;
-	case 'f': fromFile(); break;
+	case 'k': FromVideoStream(true /* Kinect */); break;
+	case 'c': FromVideoStream(false); break;
+	case 'f': FromFile(); break;
 	}
 
 	
