@@ -23,8 +23,9 @@ bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface);
 int width = 640; // Kinect v1 height = 640
 int height = 480; // Kinect v1 width =  480
 
-int screenWidth = 640; //1600;
-int screenHeight = 480; //1200;
+
+int screenWidth = 640; 
+int screenHeight = 480;
 
 Mat orig;
 
@@ -48,16 +49,34 @@ void setLabel(cv::Mat& im, const std::string label, std::vector<cv::Point>& cont
 
 
 // https://gist.github.com/DaniilTomilow/1088bca80f5a1f449f15
-void GetDesktopResolution(int& width, int& height)
+void GetDesktopResolution(int& width, int& height, int& posX, int& posY)
 {
-	DEVMODE mode;
-	mode.dmSize = sizeof(mode);
-	EnumDisplaySettings(NULL, ENUM_CURRENT_SETTINGS, &mode);
+	int index = 0;
+	DISPLAY_DEVICE dd;
+	dd.cb = sizeof(DISPLAY_DEVICE);
 
-	width = mode.dmPelsWidth;
-	height = mode.dmPelsHeight;
+	bool secondDisplay = false;
 
-	cout << "5: Width: " << width << "; height: " << height << '\n';
+	while (EnumDisplayDevices(NULL, index++, &dd, 0))
+	{
+		if (dd.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP) {
+			DEVMODE mode;
+			mode.dmSize = sizeof(mode);
+			EnumDisplaySettings(dd.DeviceName, ENUM_CURRENT_SETTINGS, &mode);
+
+			width = mode.dmPelsWidth;
+			height = mode.dmPelsHeight;
+			posX = mode.dmPosition.x;
+			posY = mode.dmPosition.y;
+
+			if (dd.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE) printf("* ");
+			cout << "Device Name: " << dd.DeviceName << "; Device String: " << dd.DeviceString << endl;
+			cout << "5: Width: " << width << "; height: " << height << '\n';
+
+			// We found a second monitor!
+			if (!(dd.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE)) break;
+		}
+	}
 }
 
 struct MonitorInfo {
@@ -120,11 +139,26 @@ void CallBackFunc(int event, int x, int y, int flags, void* userdata)
 //
 // Fix orig with add mask
 // 
-void AddingMask(const Mat& o, const Mat& s, const Mat& d) {
+void AddingMask(const Mat& o, const Mat& s, Mat& d) {
 	// Clone surface
 	Mat mask = s.clone();
+
 	// Invert surface = MASK
 	bitwise_not(mask, mask);
+
+	// Increase Saturation
+	cvtColor(mask, mask, CV_BGR2HSV);
+	for (int i = 0; i < mask.rows; i++)
+	{
+		for (int j = 0; j < mask.cols; j++)
+		{
+			// Increase Saturation
+			mask.at<Vec3b>(i, j)[1] *= 1.3;
+		}
+	}
+
+	// HSV back to BGR
+	cvtColor(mask, mask, CV_HSV2BGR);
 
 	// Add to Projection
 	add(orig, mask, d);
@@ -180,17 +214,21 @@ bool ColorCorrection(Mat& src, Mat& redSurface) {
 	Division(orig, surface, fix2);
 
 	imshow("Fullscreen", fix1);
-	moveWindow("Fullscreen", 0, 0);
+
 
 	int k = waitKey(30);
 	while (k != 27) {
 		k = waitKey(30);
-		if (k == 's') {
+		if (k == 'a') {
 			imshow("Fullscreen", fix1);
 		}
 
-		if (k == 'd') {
+		if (k == 's') {
 			imshow("Fullscreen", fix2);
+		}
+
+		if (k == 'd') {
+			imshow("Fullscreen", orig);
 		}
 	}
 
@@ -230,10 +268,6 @@ bool ManualSurface(Mat& src, vector<Point>& points) {
 	return false;
 }
 
-struct myclass {
-	bool operator() (cv::Point pt1, cv::Point pt2) { return (pt1.y > pt2.y); }
-} sortTop;
-
 // 
 // Detect projector surface.
 // Keystone korrection.
@@ -262,10 +296,10 @@ bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface) {
 
 	vector<vector<Point>> contours;
 	findContours(canny, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+	
 	vector<Point> contours_poly;
-
 	if (contours.size() == 0) {
-		// Try to find manual Surface
+		// Try to set manual Surface
 		if (!ManualSurface(src, contours_poly)) return false;
 	} else {
 		int largest_contour_index = 0;
@@ -289,6 +323,8 @@ bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface) {
 		// Skip small or non-convex objects 
 		if (vtc != 4 || fabs(contourArea(contour)) < 100 || !isContourConvex(contours_poly)) {
 			std::cerr << "No projectile surface found" << std::endl;
+			// Empty points
+			contours_poly = {};
 			// Try to set manual points
 			if (!ManualSurface(src, contours_poly))
 				return false;
@@ -296,7 +332,7 @@ bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface) {
 	}
 
 	// Reorder Points
-	sort(contours_poly.begin(), contours_poly.end(), sortTop);
+	sort(contours_poly.begin(), contours_poly.end(), [](Point pt1, Point pt2) { return pt1.y > pt2.y; });
 	Point tl, tr, br, bl;
 	if (contours_poly[0].x < contours_poly[1].x) { tl = contours_poly[0]; tr = contours_poly[1]; }
 	else { tl = contours_poly[1]; tr = contours_poly[0]; }
@@ -315,12 +351,9 @@ bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface) {
 	vector<Point2f> quad_pts  { Point2f(bl.x, bl.y), Point2f(tl.x, tl.y),  Point2f(br.x, br.y), Point2f(tr.x, tr.y) };
 	vector<Point2f> squre_pts { Point2f(0, 0),       Point2f(0, s.height), Point2f(s.width, 0), Point2f(s.width, s.height) };
 
+	// Warp perspective
 	Mat transmtx = getPerspectiveTransform(quad_pts, squre_pts);
 	warpPerspective(src, surface, transmtx, s);
-
-
-	// Draw rectangle
-	//rectangle(src, boundingRect(contour), Scalar(0, 255, 0), 1, 8, 0);
 
 	return true;
 }
@@ -331,9 +364,14 @@ void OpenWhiteFullscreen() {
 	namedWindow("Fullscreen", CV_WINDOW_NORMAL);
 	setWindowProperty("Fullscreen", CV_WND_PROP_FULLSCREEN, CV_WINDOW_FULLSCREEN);
 
-	GetDesktopResolution(screenWidth, screenHeight);
+	int posX = 0;
+	int posY = 0;
+	GetDesktopResolution(screenWidth, screenHeight, posX, posY);
 
 	Mat white(screenWidth, screenHeight, CV_8UC3, Scalar(255, 255, 255));
+	
+	// Move window to another monitor
+	moveWindow("Fullscreen", posX, posY);
 	imshow("Fullscreen", white);
 }
 
@@ -508,6 +546,7 @@ int FromVideoStream(bool kinect) {
 			// Get Next Frame
 			if (kinect) {// get a new frame from Kinect
 				frame = NextKinectFrame(pNuiSensor, hColorStreamHandle);
+				frame = NextKinectFrame(pNuiSensor, hColorStreamHandle);
 				// Kinect has alpha channel
 				cvtColor(frame, frame, cv::COLOR_BGRA2BGR);
 			}
@@ -530,8 +569,8 @@ int FromVideoStream(bool kinect) {
 }
 
 void FromFile() {
-	Mat redSurface = imread("Images/01_tr.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
-	Mat src = imread("Images/01_tt.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
+	Mat redSurface = imread("Images/02_tr.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
+	Mat src = imread("Images/02_tt.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
 
 	orig = imread("Images/jap_o.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
 
@@ -556,7 +595,7 @@ int main(int argc, char** argv) {
 	// f = file
 	// k = kinect
 
-	char code = 'f';
+	char code = 'k';
 	bool d = false;
 
 	// Open From
