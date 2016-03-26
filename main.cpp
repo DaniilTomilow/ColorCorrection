@@ -2,7 +2,7 @@
 #include <opencv2/opencv.hpp>
 #include "Windows.h"
 #include "NuiApi.h"
-
+#include <algorithm>    // std::sort
 
 using namespace cv;
 using namespace std;
@@ -17,8 +17,7 @@ using namespace std;
 // Kinect C++ Reference https://msdn.microsoft.com/en-us/library/hh855364.aspx
 
 int FromVideoStream(bool kinect);
-void fromFile();
-
+void FromFile();
 bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface);
 
 int width = 640; // Kinect v1 height = 640
@@ -26,8 +25,6 @@ int height = 480; // Kinect v1 width =  480
 
 int screenWidth = 640; //1600;
 int screenHeight = 480; //1200;
-
-unsigned int bufferSize = width * height * 4 * sizeof(unsigned char);
 
 Mat orig;
 
@@ -102,16 +99,34 @@ void GetDesktopResolution6(unsigned monitor) {
 	cout << "Name:" << info.displayName << "; Width: " << info.width << "; height " << info.height << endl;
 }
 
+void CallBackFunc(int event, int x, int y, int flags, void* userdata)
+{
+	vector<Point>* points = (vector<Point>*) userdata;
+
+	if (event == EVENT_LBUTTONDOWN && points->size() < 4)
+	{
+		points->push_back(Point(x, y));
+		cout << "Added Point" << endl;
+	}
+	else if (event == EVENT_RBUTTONDOWN && points->size() > 0)
+	{
+		points->pop_back();
+		cout << "Removed Point" << endl;
+	}
+	
+}
+
 
 //
-// Fix orig with add invert mask
+// Fix orig with add mask
 // 
 void AddingMask(const Mat& o, const Mat& s, const Mat& d) {
-	// Invert the mask
+	// Clone surface
 	Mat mask = s.clone();
-	// invert mask
+	// Invert surface = MASK
 	bitwise_not(mask, mask);
 
+	// Add to Projection
 	add(orig, mask, d);
 }
 
@@ -129,10 +144,9 @@ void Division(const Mat& o, const Mat& s, const Mat& d)
 				unsigned char oPx = o.data[y * o.step + x * o.channels() + c];
 				unsigned char sPx = s.data[y * s.step + x * s.channels() + c];
 
-				// No Zero division
+				// Non Zero division
 				if (sPx == 0) sPx = 1;
 				float s = ((float)oPx) / ((float)sPx);
-				// unsigned short s = (oPx * 255) / sPx;
 
 				unsigned char r = (s > 1.0 ? 1.0 : s) * 255;
 
@@ -157,11 +171,11 @@ bool ColorCorrection(Mat& src, Mat& redSurface) {
 	resize(surface, surface, Size(screenWidth, screenHeight));
 	resize(orig, orig, Size(screenWidth, screenHeight));
 
-	// Approach 1
+	// Approach 1.
 	Mat fix1(screenHeight, screenWidth, CV_8UC3, Scalar(255, 255, 255));
 	AddingMask(orig, surface, fix1);
 
-	// 2 approach. Division.
+	// Approach 2. Division.
 	Mat fix2(screenHeight, screenWidth, CV_8UC3, Scalar(255, 255, 255));
 	Division(orig, surface, fix2);
 
@@ -182,6 +196,43 @@ bool ColorCorrection(Mat& src, Mat& redSurface) {
 
 	return true;
 }
+
+bool ManualSurface(Mat& src, vector<Point>& points) {
+	//Create a window
+	namedWindow("Draw", 1);
+
+	Mat draw;
+	src.copyTo(draw);
+	//set the callback function for any mouse event
+	setMouseCallback("Draw", CallBackFunc, &points);
+
+	int lastSize = 0;
+	int k = waitKey(30);
+	while (k != 27) {
+		k = waitKey(30);
+		// Points size changed?
+		if (lastSize != points.size()) {
+			src.copyTo(draw);
+			lastSize = points.size();
+			for (int i = 0; i < points.size(); i++) {
+				// Draw contour line
+				line(draw, points[i], points[i == points.size() - 1 ? 0 : i + 1], Scalar(0, 0, 255), 1, CV_AA, 0);
+			}
+		}
+
+		imshow("Draw", draw);
+
+		if (k == 13 && points.size() == 4) { // Enter
+			return true;
+		}
+	}
+
+	return false;
+}
+
+struct myclass {
+	bool operator() (cv::Point pt1, cv::Point pt2) { return (pt1.y > pt2.y); }
+} sortTop;
 
 // 
 // Detect projector surface.
@@ -211,60 +262,47 @@ bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface) {
 
 	vector<vector<Point>> contours;
 	findContours(canny, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+	vector<Point> contours_poly;
 
-	if (contours.size() == 0)
-		return false;
+	if (contours.size() == 0) {
+		// Try to find manual Surface
+		if (!ManualSurface(src, contours_poly)) return false;
+	} else {
+		int largest_contour_index = 0;
+		int largest_area = 0;
+		for (unsigned int i = 0; i < contours.size(); i++)
+		{
+			double a = contourArea(contours[i], false);  //  Find the area of contour
+			if (a > largest_area) {
+				largest_area = a;
+				largest_contour_index = i;                //Store the index of largest contour
+			}
+		}
 
-	int largest_contour_index = 0;
-	int largest_area = 0;
-	for (unsigned int i = 0; i < contours.size(); i++)
-	{
-		double a = contourArea(contours[i], false);  //  Find the area of contour
-		if (a > largest_area) {
-			largest_area = a;
-			largest_contour_index = i;                //Store the index of largest contour
+		// Largest contour
+		vector<Point> contour = contours[largest_contour_index];
+		approxPolyDP(Mat(contour), contours_poly, arcLength(Mat(contour), true) * 0.02, true);
+
+		// Number of vertices of polygonal curve
+		int vtc = contours_poly.size();
+
+		// Skip small or non-convex objects 
+		if (vtc != 4 || fabs(contourArea(contour)) < 100 || !isContourConvex(contours_poly)) {
+			std::cerr << "No projectile surface found" << std::endl;
+			// Try to set manual points
+			if (!ManualSurface(src, contours_poly))
+				return false;
 		}
 	}
 
-	// Largest contour
-	vector<Point> contour = contours[largest_contour_index];
-
-	// Approximate contour with accuracy proportional
-	// to the contour perimeter
-	vector<Point> contours_poly;
-	approxPolyDP(Mat(contour), contours_poly, arcLength(Mat(contour), true) * 0.02, true);
-
-	// Number of vertices of polygonal curve
-	int vtc = contours_poly.size();
-
-	// Skip small or non-convex objects 
-	if (vtc != 4 || fabs(contourArea(contour)) < 100 || !isContourConvex(contours_poly)) {
-		std::cerr << "No projectile surface found" << std::endl;
-		return false;
-	}
-
-
 	// Reorder Points
-	Point t1, t2, b1, b2;
-	for (int i = 0; i < 4; i++) {
-		if (contours_poly[i].y >= t1.y && contours_poly[i] != t2)
-			t1 = contours_poly[i];
-		if (contours_poly[i].y >= t2.y && contours_poly[i] != t1)
-			t2 = contours_poly[i];
-	}
-
-	for (int i = 0; i < 4; i++) {
-		if (contours_poly[i] != t1 && contours_poly[i] != t2 && b1 != b2)
-			b1 = contours_poly[i];
-		if (contours_poly[i] != t1 && contours_poly[i] != t2 && contours_poly[i] != b1)
-			b2 = contours_poly[i];
-	}
-
+	sort(contours_poly.begin(), contours_poly.end(), sortTop);
 	Point tl, tr, br, bl;
-	if (t1.x < t2.x) { tl = t1; tr = t2; }
-	else { tl = t2; tr = t1; }
-	if (b1.x < b2.x) { bl = b1; br = b2; }
-	else { bl = b2; br = b1; }
+	if (contours_poly[0].x < contours_poly[1].x) { tl = contours_poly[0]; tr = contours_poly[1]; }
+	else { tl = contours_poly[1]; tr = contours_poly[0]; }
+	if (contours_poly[2].x < contours_poly[3].x) { bl = contours_poly[2]; br = contours_poly[3]; }
+	else { bl = contours_poly[3]; br = contours_poly[2]; }
+
 
 	/** Order WTF
 	2st-------4nd
@@ -280,14 +318,9 @@ bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface) {
 	Mat transmtx = getPerspectiveTransform(quad_pts, squre_pts);
 	warpPerspective(src, surface, transmtx, s);
 
-	// Draw contour line
-	line(src, contours_poly[0], contours_poly[1], Scalar(0, 0, 255), 1, CV_AA, 0);
-	line(src, contours_poly[1], contours_poly[2], Scalar(0, 0, 255), 1, CV_AA, 0);
-	line(src, contours_poly[2], contours_poly[3], Scalar(0, 0, 255), 1, CV_AA, 0);
-	line(src, contours_poly[3], contours_poly[0], Scalar(0, 0, 255), 1, CV_AA, 0);
 
 	// Draw rectangle
-	rectangle(src, boundingRect(contour), Scalar(0, 255, 0), 1, 8, 0);
+	//rectangle(src, boundingRect(contour), Scalar(0, 255, 0), 1, 8, 0);
 
 	return true;
 }
