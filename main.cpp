@@ -23,7 +23,6 @@ bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface);
 int width = 640; // Kinect v1 height = 640
 int height = 480; // Kinect v1 width =  480
 
-
 int screenWidth = 640; 
 int screenHeight = 480;
 
@@ -55,8 +54,6 @@ void GetDesktopResolution(int& width, int& height, int& posX, int& posY)
 	DISPLAY_DEVICE dd;
 	dd.cb = sizeof(DISPLAY_DEVICE);
 
-	bool secondDisplay = false;
-
 	while (EnumDisplayDevices(NULL, index++, &dd, 0))
 	{
 		if (dd.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP) {
@@ -70,6 +67,7 @@ void GetDesktopResolution(int& width, int& height, int& posX, int& posY)
 			posY = mode.dmPosition.y;
 
 			if (dd.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE) printf("* ");
+			
 			cout << "Device Name: " << dd.DeviceName << "; Device String: " << dd.DeviceString << endl;
 			cout << "5: Width: " << width << "; height: " << height << '\n';
 
@@ -79,44 +77,6 @@ void GetDesktopResolution(int& width, int& height, int& posX, int& posY)
 	}
 }
 
-struct MonitorInfo {
-	unsigned monitor = 0;
-	unsigned primary = 0;
-	unsigned index = 0;
-	unsigned width;
-	unsigned height;
-	string displayName;
-};
-
-static BOOL CALLBACK 
-MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) {
-	MonitorInfo& info = *(MonitorInfo*) dwData;
-	MONITORINFOEX mi;
-	memset(&mi, 0, sizeof(MONITORINFOEX));
-	mi.cbSize = sizeof(MONITORINFOEX);
-
-	GetMonitorInfo(hMonitor, &mi);
-	string displayName = (const char*)mi.szDevice;
-	if (displayName.find(R"(\\.\DISPLAYV)") == 0) return TRUE;  //ignore pseudo-monitors
-	if (mi.dwFlags & MONITORINFOF_PRIMARY) info.primary = info.index;
-	if (info.monitor == info.index) {
-		info.width = lprcMonitor->right - lprcMonitor->left;
-		info.height = lprcMonitor->bottom - lprcMonitor->top;
-		info.displayName = displayName;
-	}
-
-	info.index++;
-	return TRUE;
-}
-
-void GetDesktopResolution6(unsigned monitor) {
-	MonitorInfo info;
-	info.monitor = monitor;
-
-	EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, (LPARAM)&info);
-
-	cout << "Name:" << info.displayName << "; Width: " << info.width << "; height " << info.height << endl;
-}
 
 void CallBackFunc(int event, int x, int y, int flags, void* userdata)
 {
@@ -135,9 +95,8 @@ void CallBackFunc(int event, int x, int y, int flags, void* userdata)
 	
 }
 
-
 //
-// Fix orig with add mask
+// First Approach. Fix orig with add mask
 // 
 void AddingMask(const Mat& o, const Mat& s, Mat& d) {
 	// Clone surface
@@ -146,19 +105,7 @@ void AddingMask(const Mat& o, const Mat& s, Mat& d) {
 	// Invert surface = MASK
 	bitwise_not(mask, mask);
 
-	// Increase Saturation
-	cvtColor(mask, mask, CV_BGR2HSV);
-	for (int i = 0; i < mask.rows; i++)
-	{
-		for (int j = 0; j < mask.cols; j++)
-		{
-			// Increase Saturation
-			mask.at<Vec3b>(i, j)[1] *= 1.3;
-		}
-	}
-
-	// HSV back to BGR
-	cvtColor(mask, mask, CV_HSV2BGR);
+	mask.convertTo(mask, -1, 0.5, 0);
 
 	// Add to Projection
 	add(orig, mask, d);
@@ -169,9 +116,9 @@ void AddingMask(const Mat& o, const Mat& s, Mat& d) {
 //
 void Division(const Mat& o, const Mat& s, const Mat& d)
 {
-	for (int y = 0; y < o.size().height; ++y)
+	for (int y = 0; y < o.rows; ++y)
 	{
-		for (int x = 0; x < o.size().width; ++x)
+		for (int x = 0; x < o.cols; ++x)
 		{	
 			for (int c = 0; c < o.channels(); ++c)
 			{
@@ -179,8 +126,8 @@ void Division(const Mat& o, const Mat& s, const Mat& d)
 				unsigned char sPx = s.data[y * s.step + x * s.channels() + c];
 
 				// Non Zero division
-				if (sPx == 0) sPx = 1;
-				float s = ((float)oPx) / ((float)sPx);
+				float fsPx = (sPx == 0) ? 0.00001 : (float)sPx;
+				float s = ((float)oPx) / fsPx;
 
 				unsigned char r = (s > 1.0 ? 1.0 : s) * 255;
 
@@ -191,18 +138,15 @@ void Division(const Mat& o, const Mat& s, const Mat& d)
 }
 
 bool ColorCorrection(Mat& src, Mat& redSurface) {
+	int k = waitKey(30);
 
 	Mat surface;
-	if (!DetectSurface(src, redSurface, surface)) {
-		// No surface found
+	while (!DetectSurface(src, redSurface, surface)) {
 		return false;
 	}
 
 	// TODO: this is just test
 	orig = imread("Images/jap_o.jpg", CV_LOAD_IMAGE_COLOR);
-
-	// Resize surface and orig to Window Size
-	resize(surface, surface, Size(screenWidth, screenHeight));
 	resize(orig, orig, Size(screenWidth, screenHeight));
 
 	// Approach 1.
@@ -215,8 +159,6 @@ bool ColorCorrection(Mat& src, Mat& redSurface) {
 
 	imshow("Fullscreen", fix1);
 
-
-	int k = waitKey(30);
 	while (k != 27) {
 		k = waitKey(30);
 		if (k == 'a') {
@@ -266,6 +208,36 @@ bool ManualSurface(Mat& src, vector<Point>& points) {
 	}
 
 	return false;
+}
+
+void AdjustPerspective(Mat& src, Mat& surface, vector<Point>& contours_poly) {
+	
+	// Reorder Points
+	sort(contours_poly.begin(), contours_poly.end(), [](Point pt1, Point pt2) { return pt1.y > pt2.y; });
+	Point tl, tr, br, bl;
+	if (contours_poly[0].x < contours_poly[1].x) { tl = contours_poly[0]; tr = contours_poly[1]; }
+	else { tl = contours_poly[1]; tr = contours_poly[0]; }
+	if (contours_poly[2].x < contours_poly[3].x) { bl = contours_poly[2]; br = contours_poly[3]; }
+	else { bl = contours_poly[3]; br = contours_poly[2]; }
+
+
+	/** Order WTF
+	2st-------4nd
+	|         |
+	|         |
+	|         |
+	1rd-------3th
+	*/
+	Size s = src.size();
+	vector<Point2f> quad_pts{ Point2f(bl.x, bl.y), Point2f(tl.x, tl.y),  Point2f(br.x, br.y), Point2f(tr.x, tr.y) };
+	vector<Point2f> squre_pts{ Point2f(0, 0),       Point2f(0, s.height), Point2f(s.width, 0), Point2f(s.width, s.height) };
+
+	// Warp perspective
+	Mat transmtx = getPerspectiveTransform(quad_pts, squre_pts);
+	warpPerspective(src, surface, transmtx, s);
+
+	// Resize surface and orig to screen size
+	resize(surface, surface, Size(screenWidth, screenHeight));
 }
 
 // 
@@ -331,32 +303,30 @@ bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface) {
 		}
 	}
 
-	// Reorder Points
-	sort(contours_poly.begin(), contours_poly.end(), [](Point pt1, Point pt2) { return pt1.y > pt2.y; });
-	Point tl, tr, br, bl;
-	if (contours_poly[0].x < contours_poly[1].x) { tl = contours_poly[0]; tr = contours_poly[1]; }
-	else { tl = contours_poly[1]; tr = contours_poly[0]; }
-	if (contours_poly[2].x < contours_poly[3].x) { bl = contours_poly[2]; br = contours_poly[3]; }
-	else { bl = contours_poly[3]; br = contours_poly[2]; }
+	AdjustPerspective(src, surface, contours_poly);
 
+	// Project surface back
+	imshow("Fullscreen", surface);
 
-	/** Order WTF
-	2st-------4nd
-	|         |
-	|         |
-	|         |
-	1rd-------3th
-	*/
-	Size s = src.size();
-	vector<Point2f> quad_pts  { Point2f(bl.x, bl.y), Point2f(tl.x, tl.y),  Point2f(br.x, br.y), Point2f(tr.x, tr.y) };
-	vector<Point2f> squre_pts { Point2f(0, 0),       Point2f(0, s.height), Point2f(s.width, 0), Point2f(s.width, s.height) };
+	int k = waitKey(30);
+	while (k != 27) { // ECS - restart detect surface
+		k = waitKey(30);
+		if (k == 13) { 
+			destroyWindow("Draw");
+			return true; 
+		} // Accept Surface
+		if (k == 'r') { // R - change surface manual
+			contours_poly = {};
+			if (ManualSurface(src, contours_poly)) {
+				AdjustPerspective(src, surface, contours_poly);
+				imshow("Fullscreen", surface);
+			}
+		}
+	}
 
-	// Warp perspective
-	Mat transmtx = getPerspectiveTransform(quad_pts, squre_pts);
-	warpPerspective(src, surface, transmtx, s);
-
-	return true;
+	return false;
 }
+
 
 
 // Open White Fullscreen
@@ -374,6 +344,7 @@ void OpenWhiteFullscreen() {
 	moveWindow("Fullscreen", posX, posY);
 	imshow("Fullscreen", white);
 }
+
 
 Mat NextKinectFrame(INuiSensor* pNuiSensor, HANDLE hColorStreamHandle) {
 	NUI_IMAGE_FRAME nuiImage;
@@ -586,6 +557,7 @@ void FromFile() {
 		return;
 	}
 
+	OpenWhiteFullscreen();
 	ColorCorrection(src, redSurface);
 }
 
@@ -595,7 +567,7 @@ int main(int argc, char** argv) {
 	// f = file
 	// k = kinect
 
-	char code = 'k';
+	char code = 'f';
 	bool d = false;
 
 	// Open From
