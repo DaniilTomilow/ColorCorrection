@@ -242,13 +242,8 @@ void AdjustPerspective(Mat& src, Mat& surface, vector<Point>& points) {
 	resize(surface, surface, Size(screenWidth, screenHeight));
 }
 
-// 
-// Detect projector surface.
-// Keystone korrection.
-// https://github.com/bsdnoobz/opencv-code/blob/master/shape-detect.cpp
-// https://github.com/bsdnoobz/opencv-code/blob/master/quad-segmentation.cpp
-// 
-bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface) {
+bool FindSurfaceContours(Mat& src, Mat& redSurface, vector<Point>& contours_poly) {
+
 	// Convert to HSV
 	Mat hsv_image;
 	cvtColor(redSurface, hsv_image, cv::COLOR_BGR2HSV);
@@ -270,12 +265,12 @@ bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface) {
 
 	vector<vector<Point>> contours;
 	findContours(canny, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
-	
-	vector<Point> contours_poly;
+
 	if (contours.size() == 0) {
 		// Try to set manual Surface
 		if (!ManualSurface(src, contours_poly)) return false;
-	} else {
+	}
+	else {
 		int largest_contour_index = 0;
 		int largest_area = 0;
 		for (unsigned int i = 0; i < contours.size(); i++)
@@ -296,7 +291,7 @@ bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface) {
 
 		// Skip small or non-convex objects 
 		if (vtc != 4 || fabs(contourArea(contour)) < 100 || !isContourConvex(contours_poly)) {
-			std::cerr << "No projectile surface found" << std::endl;
+			std::cerr << "No surface found" << std::endl;
 			// Empty points
 			contours_poly = {};
 			// Try to set manual points
@@ -304,19 +299,32 @@ bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface) {
 				return false;
 		}
 	}
+}
 
+// 
+// Detect projector surface.
+// Keystone korrection.
+// https://github.com/bsdnoobz/opencv-code/blob/master/shape-detect.cpp
+// https://github.com/bsdnoobz/opencv-code/blob/master/quad-segmentation.cpp
+// 
+bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface) {
+	
+	vector<Point> contours_poly;
+
+	if (!FindSurfaceContours(src, redSurface, contours_poly)) {
+		// User exits
+		return false;
+	}
+	
 	AdjustPerspective(src, surface, contours_poly);
 
 	// Project surface back
 	imshow("Fullscreen", surface);
 
 	int k = waitKey(30);
-	while (k != 27) { // ECS - restart detect surface
+	while (k != 27) { // ECS - exit
 		k = waitKey(30);
-		if (k == 13) { 
-			
-			return true; 
-		} // Accept Surface
+		if (k == 13) return true; // Enter - Accepts Surface
 		if (k == 'r') { // R - change surface manual
 			if (ManualSurface(src, contours_poly)) {
 				AdjustPerspective(src, surface, contours_poly);
