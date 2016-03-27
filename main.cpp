@@ -295,10 +295,10 @@ public:
 		{
 			for (int x = 0; x < o.cols; ++x)
 			{
-				for (int c = 0; c < o.channels(); ++c)
+				for (int c = 0; c < 3; ++c)
 				{
-					unsigned char oPx = o.data[y * o.step + x * o.channels() + c];
-					unsigned char sPx = s.data[y * s.step + x * s.channels() + c];
+					unsigned char oPx = o.data[y * o.step + x * 3 + c];
+					unsigned char sPx = s.data[y * s.step + x * 3 + c];
 
 					// Non Zero division
 					float fsPx = (sPx == 0) ? 0.00001 : (float)sPx;
@@ -306,7 +306,41 @@ public:
 
 					unsigned char r = (s > 1.0 ? 1.0 : s) * 255;
 
-					d.data[y * d.step + d.channels() * x + c] = r;
+					d.data[y * d.step + 3 * x + c] = r;
+				}
+			}
+		}
+	}
+
+	//
+	// Third Approach: calculate the right color by divide
+	//
+	void Combi(const Mat& o, const Mat& s, const Mat& d)
+	{
+		for (int y = 0; y < o.rows; ++y)
+		{
+			for (int x = 0; x < o.cols; ++x)
+			{
+				for (int c = 0; c < 3; ++c)
+				{
+					unsigned char oPx = o.data[y * o.step + x * 3 + c];
+					unsigned char sPx = s.data[y * s.step + x * 3 + c];
+
+					// Add ?
+					unsigned char r;
+					if (oPx > 80) {
+						short a = oPx + (255 - sPx);
+						r = a > 255 ? 255 : (unsigned char) a;
+					}
+					else {
+						// Non Zero division
+						float fsPx = (sPx == 0) ? 0.00001 : (float)sPx;
+						float s = ((float)oPx) / fsPx;
+
+						r = (s > 1.0 ? 1.0 : s) * 255;
+					}
+
+					d.data[y * d.step + 3 * x + c] = r;
 				}
 			}
 		}
@@ -334,51 +368,66 @@ public:
 		Mat fix2(screenHeight, screenWidth, CV_8UC3, Scalar(255, 255, 255));
 		Division(input, surface, fix2);
 
+		// Approach 3. Division.
+		Mat fix3(screenHeight, screenWidth, CV_8UC3, Scalar(255, 255, 255));
+		Combi(input, surface, fix3);
+
 		imshow("Fullscreen", fix1);
 
-		double alpha[2] = { 1.0, 1.0 };
-		int beta[2] = { 0, 0 };
+		double alpha[3] = { 1.0, 1.0, 1.0 };
+		int beta[3] = { 0, 0, 0 };
 
 		bool changed = false;
-		int lastImg = 0;
+		int lastImg = 1;
 
 		Mat changedSurface;
 
 		while (k != 27) {
 			k = waitKey(30);
 
-			if (changed && lastImg < 2) {
-				cout << "Approach:" << lastImg << " - alpha =" << alpha[lastImg] << "; beta = " << beta[lastImg] << endl;
+			if (changed && lastImg != 0) {
+				cout << "Approach:" << lastImg << " - alpha =" << alpha[lastImg-1] << "; beta = " << beta[lastImg-1] << endl;
 				changed = false;
 
-				surface.convertTo(changedSurface, -1, alpha[lastImg], beta[lastImg]);
-				if (lastImg == 0)
-					AddingMask(input, changedSurface, fix1);
+				surface.convertTo(changedSurface, -1, alpha[lastImg-1], beta[lastImg-1]);
 				if (lastImg == 1)
+					AddingMask(input, changedSurface, fix1);
+				if (lastImg == 2)
 					Division(input, changedSurface, fix2);
+				if (lastImg == 3)
+					Combi(input, changedSurface, fix3);
 			}
 
-			if (lastImg == 0 || k == 'a') {
+			if (lastImg == 1 || k == 49) {
 				imshow("Fullscreen", fix1);
-				lastImg = 0;
-			}
-			if (lastImg == 1 || k == 's') {
-				imshow("Fullscreen", fix2);
 				lastImg = 1;
 			}
-			if (lastImg == 'd' || k == 'd') {
-				imshow("Fullscreen", input);
+			if (lastImg == 2 || k == 50) {
+				imshow("Fullscreen", fix2);
 				lastImg = 2;
+			}
+
+			if (lastImg == 3 || k == 51) {
+				imshow("Fullscreen", fix3);
+				lastImg = 3;
+			}
+
+			// Original Image
+			if (lastImg == 0 || k == 48) {
+				imshow("Fullscreen", input);
+				lastImg = 0;
 			}
 
 			// Adjust Contrast and Brightness
 			switch (k) {
-			case 'u': if (lastImg < 2) { alpha[lastImg] -= 0.1; changed = true; }break;
-			case 'j': if (lastImg < 2) { alpha[lastImg] += 0.1; changed = true; } break;
+			case 'u': if (lastImg != 0) { alpha[lastImg-1] -= 0.1; changed = true; }break;
+			case 'j': if (lastImg != 0) { alpha[lastImg-1] += 0.1; changed = true; } break;
 
-			case 'i': if (lastImg < 2) { beta[lastImg] -= 5;  changed = true; } break;
-			case 'k': if (lastImg < 2) { beta[lastImg] += 5;  changed = true; } break;
+			case 'i': if (lastImg != 0) { beta[lastImg-1] -= 5;  changed = true; } break;
+			case 'k': if (lastImg != 0) { beta[lastImg-1] += 5;  changed = true; } break;
 			}
+
+			if(k != -1) cout << "key " << k << endl;
 
 		}
 
@@ -524,10 +573,10 @@ public:
 			imshow("Camera", frame);
 
 			k = waitKey(30);
-			if (k == 13) { // Enter
+			if (k == 13 && !showRedScreen) { // Enter
 				showRedScreen = true;
 			}
-			else if (!captureRedAndWhite && k == 'c') {
+			else if (!captureRedAndWhite && k == 13) {
 				showRedScreen = false;
 				captureRedAndWhite = true;
 			}
