@@ -157,13 +157,15 @@ private:
 
 			// Skip small or non-convex objects 
 			if (vtc != 4 || fabs(contourArea(contour)) < 100 || !isContourConvex(contours_poly)) {
-				std::cerr << "No surface found" << std::endl;
+				std::cout << "No surface found" << std::endl;
 				// Empty points
 				contours_poly = {};
 				// Try to set manual points
 				if (!ManualSurface(src, contours_poly))
 					return false;
 			}
+
+			return true;
 		}
 
 		return false;
@@ -334,46 +336,48 @@ public:
 
 		imshow("Fullscreen", fix1);
 
-		double alpha = 1.0;
-		int beta = 0;
+		double alpha[2] = { 1.0, 1.0 };
+		int beta[2] = { 0, 0 };
+
 		bool changed = false;
-		int lastImg = 'a';
+		int lastImg = 0;
+
 		Mat changedSurface;
 
 		while (k != 27) {
 			k = waitKey(30);
 
-			if (changed && lastImg != 'd') {
-				cout << "Changed  contrast and brightness: alpha =" << alpha << "; beta = " << beta << endl;
+			if (changed && lastImg < 2) {
+				cout << "Approach:" << lastImg << " - alpha =" << alpha[lastImg] << "; beta = " << beta[lastImg] << endl;
 				changed = false;
 
-				surface.convertTo(changedSurface, -1, alpha, beta);
-				if (lastImg == 'a')
+				surface.convertTo(changedSurface, -1, alpha[lastImg], beta[lastImg]);
+				if (lastImg == 0)
 					AddingMask(input, changedSurface, fix1);
-				if (lastImg == 's')
+				if (lastImg == 1)
 					Division(input, changedSurface, fix2);
 			}
 
-			if (lastImg == 'a' || k == 'a') {
+			if (lastImg == 0 || k == 'a') {
 				imshow("Fullscreen", fix1);
-				lastImg = 'a';
+				lastImg = 0;
 			}
-			if (lastImg == 's' || k == 's') {
+			if (lastImg == 1 || k == 's') {
 				imshow("Fullscreen", fix2);
-				lastImg = 's';
+				lastImg = 1;
 			}
 			if (lastImg == 'd' || k == 'd') {
 				imshow("Fullscreen", input);
-				lastImg = 'd';
+				lastImg = 2;
 			}
 
 			// Adjust Contrast and Brightness
 			switch (k) {
-			case 'u': alpha += 0.1; changed = true; break;
-			case 'j': alpha -= 0.1; changed = true; break;
+			case 'u': if (lastImg < 2) { alpha[lastImg] -= 0.1; changed = true; }break;
+			case 'j': if (lastImg < 2) { alpha[lastImg] += 0.1; changed = true; } break;
 
-			case 'i': beta += 5;  changed = true; break;
-			case 'k': beta -= 5;  changed = true; break;
+			case 'i': if (lastImg < 2) { beta[lastImg] -= 5;  changed = true; } break;
+			case 'k': if (lastImg < 2) { beta[lastImg] += 5;  changed = true; } break;
 			}
 
 		}
@@ -456,7 +460,6 @@ public:
 	// Open White Fullscreen
 	void OpenWhiteFullscreen() {
 		namedWindow("Fullscreen", CV_WINDOW_NORMAL);
-		setWindowProperty("Fullscreen", CV_WND_PROP_FULLSCREEN, CV_WINDOW_FULLSCREEN);
 
 		int posX = 0;
 		int posY = 0;
@@ -466,6 +469,7 @@ public:
 
 		// Move window to another monitor
 		moveWindow("Fullscreen", posX, posY);
+		setWindowProperty("Fullscreen", CV_WND_PROP_FULLSCREEN, CV_WINDOW_FULLSCREEN);
 		imshow("Fullscreen", white);
 	}
 
@@ -551,6 +555,7 @@ public:
 
 				frame.copyTo(src);
 
+				destroyWindow("Camera");
 				if (Correction(src, redSurface)) {
 					break;
 				}
@@ -638,9 +643,9 @@ int main(int argc, char** argv) {
 		// ...
 	}
 
-	if (cmdOptionExists(argv, argv + argc, "-k"))
+	if (cmdOptionExists(argv, argv + argc, "-f"))
 	{
-		kicc.FromVideoStream(true /* Kinect */);
+		kicc.FromFile();
 	}
 	else if (cmdOptionExists(argv, argv + argc, "-c"))
 	{
@@ -648,7 +653,7 @@ int main(int argc, char** argv) {
 	}
 	else
 	{
-		kicc.FromFile();
+		kicc.FromVideoStream(true /* Kinect */);
 	}
 
 	while (waitKey() != 27) continue;
