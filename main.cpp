@@ -203,6 +203,7 @@ bool ManualSurface(Mat& src, vector<Point>& points) {
 		imshow("Draw", draw);
 
 		if (k == 13 && points.size() == 4) { // Enter
+			destroyWindow("Draw");
 			return true;
 		}
 	}
@@ -210,8 +211,9 @@ bool ManualSurface(Mat& src, vector<Point>& points) {
 	return false;
 }
 
-void AdjustPerspective(Mat& src, Mat& surface, vector<Point>& contours_poly) {
+void AdjustPerspective(Mat& src, Mat& surface, vector<Point>& points) {
 	
+	vector<Point> contours_poly = points;
 	// Reorder Points
 	sort(contours_poly.begin(), contours_poly.end(), [](Point pt1, Point pt2) { return pt1.y > pt2.y; });
 	Point tl, tr, br, bl;
@@ -312,11 +314,10 @@ bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface) {
 	while (k != 27) { // ECS - restart detect surface
 		k = waitKey(30);
 		if (k == 13) { 
-			destroyWindow("Draw");
+			
 			return true; 
 		} // Accept Surface
 		if (k == 'r') { // R - change surface manual
-			contours_poly = {};
 			if (ManualSurface(src, contours_poly)) {
 				AdjustPerspective(src, surface, contours_poly);
 				imshow("Fullscreen", surface);
