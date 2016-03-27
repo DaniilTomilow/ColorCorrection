@@ -159,19 +159,48 @@ bool ColorCorrection(Mat& src, Mat& redSurface) {
 
 	imshow("Fullscreen", fix1);
 
+	double alpha = 1.0;
+	int beta = 0;
+	bool changed = false;
+	int lastImg = 'a';
+	Mat changedSurface;
+
 	while (k != 27) {
 		k = waitKey(30);
-		if (k == 'a') {
+
+		if (changed && lastImg != 'd') {
+			cout << "Changed  contrast and brightness: alpha =" << alpha << "; beta = " << beta << endl;
+			changed = false;
+			
+			surface.convertTo(changedSurface, -1, alpha, beta);
+			if (lastImg == 'a')
+			  AddingMask(orig, changedSurface, fix1);
+			if (lastImg == 's')
+			  Division(orig, changedSurface, fix2);
+		}
+
+		if (lastImg == 'a' || k == 'a') {
 			imshow("Fullscreen", fix1);
+			lastImg = 'a';
 		}
-
-		if (k == 's') {
+		if (lastImg == 's' || k == 's') {
 			imshow("Fullscreen", fix2);
+			lastImg = 's';
+		}
+		if (lastImg == 'd' || k == 'd') {
+			imshow("Fullscreen", orig);
+			lastImg = 'd';
 		}
 
-		if (k == 'd') {
-			imshow("Fullscreen", orig);
+		switch (k) {
+		// Adjust Contrast and Brightness
+		case 'u': alpha += 0.1; changed = true; break;
+		case 'j': alpha -= 0.1; changed = true; break;
+
+		case 'i': beta+=5;  changed = true; break;
+		case 'k': beta-=5;  changed = true; break;
 		}
+		
 	}
 
 	return true;
@@ -335,7 +364,6 @@ bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface) {
 
 	return false;
 }
-
 
 
 // Open White Fullscreen
