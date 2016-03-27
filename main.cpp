@@ -368,8 +368,8 @@ public:
 				lastImg = 'd';
 			}
 
+			// Adjust Contrast and Brightness
 			switch (k) {
-				// Adjust Contrast and Brightness
 			case 'u': alpha += 0.1; changed = true; break;
 			case 'j': alpha -= 0.1; changed = true; break;
 
@@ -590,6 +590,22 @@ public:
 
 };
 
+// Grabed from here http://stackoverflow.com/questions/865668/how-to-parse-command-line-arguments-in-c
+char* getCmdOption(char ** begin, char ** end, const std::string & option)
+{
+	char ** itr = std::find(begin, end, option);
+	if (itr != end && ++itr != end)
+	{
+		return *itr;
+	}
+	return 0;
+}
+
+// Grabed from here http://stackoverflow.com/questions/865668/how-to-parse-command-line-arguments-in-c
+bool cmdOptionExists(char** begin, char** end, const std::string& option)
+{
+	return std::find(begin, end, option) != end;
+}
 
 int main(int argc, char** argv) {
 	// c = Camera
@@ -599,15 +615,30 @@ int main(int argc, char** argv) {
 	ColorCorrection cc;
 
 	char code = 'f';
-	bool d = false;
 
-	// Open From
-	switch (code) {
-	case 'k': cc.FromVideoStream(true /* Kinect */); break;
-	case 'c': cc.FromVideoStream(false); break;
-	case 'f': cc.FromFile(); break;
+	if (cmdOptionExists(argv, argv + argc, "-h"))
+	{
+		// Show Help
+	}
+	
+	char* input = getCmdOption(argv, argv + argc, "-i");
+	if (input)
+	{
+		// Do interesting things
+		// ...
 	}
 
+	if (cmdOptionExists(argv, argv + argc, "-k"))
+	{
+		cc.FromVideoStream(true /* Kinect */);
+	}
+	else if (cmdOptionExists(argv, argv + argc, "-c"))
+	{
+		cc.FromVideoStream(false /* Kinect */);
+	}
+	else {
+		cc.FromFile();
+	}
 	
 	while (waitKey() != 27) continue;
 
