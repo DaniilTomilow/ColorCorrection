@@ -24,7 +24,9 @@ private:
 	int height = 480; // Kinect v1 width =  480
 	int screenWidth = 640;
 	int screenHeight = 480;
-	Mat orig;
+
+	// TODO: this is test input
+	Mat input;
 
 	// https://gist.github.com/DaniilTomilow/1088bca80f5a1f449f15
 	void GetDesktopResolution(int& width, int& height, int& posX, int& posY)
@@ -280,7 +282,7 @@ public:
 		mask.convertTo(mask, -1, 0.5, 0);
 
 		// Add to Projection
-		add(orig, mask, d);
+		add(input, mask, d);
 	}
 
 	//
@@ -310,7 +312,7 @@ public:
 	}
 
 	// Main entry point for color correction
-	bool correction(Mat& src, Mat& redSurface) {
+	bool Correction(Mat& src, Mat& redSurface) {
 		int k = waitKey(30);
 
 		// Detect the surface
@@ -320,16 +322,16 @@ public:
 		}
 
 		// TODO: this is just test
-		orig = imread("Images/jap_o.jpg", CV_LOAD_IMAGE_COLOR);
-		resize(orig, orig, Size(screenWidth, screenHeight));
+		input = imread("Images/jap_o.jpg", CV_LOAD_IMAGE_COLOR);
+		resize(input, input, Size(screenWidth, screenHeight));
 
 		// Approach 1.
 		Mat fix1(screenHeight, screenWidth, CV_8UC3, Scalar(255, 255, 255));
-		AddingMask(orig, surface, fix1);
+		AddingMask(input, surface, fix1);
 
 		// Approach 2. Division.
 		Mat fix2(screenHeight, screenWidth, CV_8UC3, Scalar(255, 255, 255));
-		Division(orig, surface, fix2);
+		Division(input, surface, fix2);
 
 		imshow("Fullscreen", fix1);
 
@@ -348,9 +350,9 @@ public:
 
 				surface.convertTo(changedSurface, -1, alpha, beta);
 				if (lastImg == 'a')
-					AddingMask(orig, changedSurface, fix1);
+					AddingMask(input, changedSurface, fix1);
 				if (lastImg == 's')
-					Division(orig, changedSurface, fix2);
+					Division(input, changedSurface, fix2);
 			}
 
 			if (lastImg == 'a' || k == 'a') {
@@ -362,7 +364,7 @@ public:
 				lastImg = 's';
 			}
 			if (lastImg == 'd' || k == 'd') {
-				imshow("Fullscreen", orig);
+				imshow("Fullscreen", input);
 				lastImg = 'd';
 			}
 
@@ -550,7 +552,7 @@ public:
 
 				frame.copyTo(src);
 
-				if (correction(src, redSurface)) {
+				if (Correction(src, redSurface)) {
 					break;
 				}
 				else {
@@ -568,7 +570,7 @@ public:
 		Mat redSurface = imread("Images/02_tr.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
 		Mat src = imread("Images/02_tt.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
 
-		orig = imread("Images/jap_o.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
+		input = imread("Images/jap_o.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
 
 		if (!src.data)                              // Check for invalid input
 		{
@@ -576,14 +578,14 @@ public:
 			return;
 		}
 
-		if (!orig.data)                              // Check for invalid input
+		if (!input.data)                              // Check for invalid input
 		{
 			cout << "Could not open or find the orig image" << std::endl;
 			return;
 		}
 
 		OpenWhiteFullscreen();
-		correction(src, redSurface);
+		Correction(src, redSurface);
 	}
 
 };
