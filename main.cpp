@@ -646,7 +646,7 @@ int main(int argc, char** argv) {
 	{
 		kicc.FromVideoStream(false /* Kinect */);
 	}
-	else 
+	else
 	{
 		kicc.FromFile();
 	}
