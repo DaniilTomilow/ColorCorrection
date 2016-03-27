@@ -17,7 +17,7 @@ using namespace std;
 // Kinect C++ Reference https://msdn.microsoft.com/en-us/library/hh855364.aspx
 
 
-class ColorCorrection {
+class Kicc {
 
 private:
 	int width = 640; // Kinect v1 height = 640
@@ -73,7 +73,6 @@ private:
 			points->pop_back();
 			cout << "Removed Point" << endl;
 		}
-
 	}
 
 	// Adjust surface perspective and order the points
@@ -169,7 +168,7 @@ private:
 
 		return false;
 	}
-	
+
 	// Get next kinect frame as Mat
 	Mat NextKinectFrame(INuiSensor* pNuiSensor, HANDLE hColorStreamHandle) {
 		NUI_IMAGE_FRAME nuiImage;
@@ -607,20 +606,31 @@ bool cmdOptionExists(char** begin, char** end, const std::string& option)
 	return std::find(begin, end, option) != end;
 }
 
+void help() {
+	cout << "Kicc - Kinect Color Correction" << endl;
+	cout << "usage: ./kicc -i=string [options]" << endl;
+	cout << "options:" << endl;
+	cout << "-i input path" << endl;
+	cout << "-k Kinect Camera" << endl;
+	cout << "-c Video Camera" << endl;
+	cout << "-f Test Files" << endl;
+	cout << "-f this message" << endl;
+}
+
 int main(int argc, char** argv) {
 	// c = Camera
 	// f = file
 	// k = kinect
 
-	ColorCorrection cc;
+	Kicc kicc;
 
 	char code = 'f';
 
 	if (cmdOptionExists(argv, argv + argc, "-h"))
 	{
-		// Show Help
+		help();
 	}
-	
+
 	char* input = getCmdOption(argv, argv + argc, "-i");
 	if (input)
 	{
@@ -630,16 +640,17 @@ int main(int argc, char** argv) {
 
 	if (cmdOptionExists(argv, argv + argc, "-k"))
 	{
-		cc.FromVideoStream(true /* Kinect */);
+		kicc.FromVideoStream(true /* Kinect */);
 	}
 	else if (cmdOptionExists(argv, argv + argc, "-c"))
 	{
-		cc.FromVideoStream(false /* Kinect */);
+		kicc.FromVideoStream(false /* Kinect */);
 	}
-	else {
-		cc.FromFile();
+	else 
+	{
+		kicc.FromFile();
 	}
-	
+
 	while (waitKey() != 27) continue;
 
 	return 0;
