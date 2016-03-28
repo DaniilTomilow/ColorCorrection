@@ -29,7 +29,7 @@ private:
 	Mat input;
 
 	// https://gist.github.com/DaniilTomilow/1088bca80f5a1f449f15
-	void GetDesktopResolution(int& width, int& height, int& posX, int& posY)
+	void getDesktopResolution(int& width, int& height, int& posX, int& posY)
 	{
 		int index = 0;
 		DISPLAY_DEVICE dd;
@@ -59,7 +59,7 @@ private:
 	}
 
 	// Mouse callback for manual surface
-	static void CallBackFunc(int event, int x, int y, int flags, void* userdata)
+	static void callBackFunc(int event, int x, int y, int flags, void* userdata)
 	{
 		vector<Point>* points = (vector<Point>*) userdata;
 
@@ -76,7 +76,7 @@ private:
 	}
 
 	// Adjust surface perspective and order the points
-	void AdjustPerspective(Mat& src, Mat& surface, vector<Point>& points) {
+	void adjustPerspective(Mat& src, Mat& surface, vector<Point>& points) {
 
 		vector<Point> contours_poly = points;
 		// Reorder Points
@@ -108,7 +108,7 @@ private:
 	}
 
 	// Find conrours on surface
-	bool FindSurfaceContours(Mat& src, Mat& redSurface, vector<Point>& contours_poly) {
+	bool findSurfaceContours(Mat& src, Mat& redSurface, vector<Point>& contours_poly) {
 
 		// Convert to HSV
 		Mat hsv_image;
@@ -134,7 +134,7 @@ private:
 
 		if (contours.size() == 0) {
 			// Try to set manual Surface
-			if (!ManualSurface(src, contours_poly)) return false;
+			if (!manualSurface(src, contours_poly)) return false;
 		}
 		else {
 			int largest_contour_index = 0;
@@ -161,7 +161,7 @@ private:
 				// Empty points
 				contours_poly = {};
 				// Try to set manual points
-				if (!ManualSurface(src, contours_poly))
+				if (!manualSurface(src, contours_poly))
 					return false;
 			}
 
@@ -172,7 +172,7 @@ private:
 	}
 
 	// Get next kinect frame as Mat
-	Mat NextKinectFrame(INuiSensor* pNuiSensor, HANDLE hColorStreamHandle) {
+	Mat nextKinectFrame(INuiSensor* pNuiSensor, HANDLE hColorStreamHandle) {
 		NUI_IMAGE_FRAME nuiImage;
 		HRESULT hr;
 		hr = pNuiSensor->NuiImageStreamGetNextFrame(hColorStreamHandle, 1000, &nuiImage);
@@ -193,7 +193,7 @@ private:
 	}
 
 	// Init Kinect Sensor
-	HRESULT InitKinect(INuiSensor** sensor, HANDLE* hColorStreamHandle) {
+	HRESULT initKinect(INuiSensor** sensor, HANDLE* hColorStreamHandle) {
 		NUI_IMAGE_RESOLUTION resolution = NUI_IMAGE_RESOLUTION_640x480;
 
 		// If we want the width
@@ -273,14 +273,12 @@ public:
 	//
 	// First Approach. Fix orig with add mask
 	// 
-	void AddingMask(const Mat& o, const Mat& s, Mat& d) {
+	void addingMask(const Mat& o, const Mat& s, Mat& d) {
 		// Clone surface
 		Mat mask = s.clone();
 
 		// Invert surface = MASK
 		bitwise_not(mask, mask);
-
-		mask.convertTo(mask, -1, 0.5, 0);
 
 		// Add to Projection
 		add(input, mask, d);
@@ -289,7 +287,7 @@ public:
 	//
 	// Second Approach: calculate the right color by divide
 	//
-	void Division(const Mat& o, const Mat& s, const Mat& d)
+	void division(const Mat& o, const Mat& s, const Mat& d)
 	{
 		for (int y = 0; y < o.rows; ++y)
 		{
@@ -312,47 +310,13 @@ public:
 		}
 	}
 
-	//
-	// Third Approach: calculate the right color by divide
-	//
-	void Combi(const Mat& o, const Mat& s, const Mat& d)
-	{
-		for (int y = 0; y < o.rows; ++y)
-		{
-			for (int x = 0; x < o.cols; ++x)
-			{
-				for (int c = 0; c < 3; ++c)
-				{
-					unsigned char oPx = o.data[y * o.step + x * 3 + c];
-					unsigned char sPx = s.data[y * s.step + x * 3 + c];
-
-					// Add ?
-					unsigned char r;
-					if (oPx > 80) {
-						short a = oPx + (255 - sPx);
-						r = a > 255 ? 255 : (unsigned char) a;
-					}
-					else {
-						// Non Zero division
-						float fsPx = (sPx == 0) ? 0.00001 : (float)sPx;
-						float s = ((float)oPx) / fsPx;
-
-						r = (s > 1.0 ? 1.0 : s) * 255;
-					}
-
-					d.data[y * d.step + 3 * x + c] = r;
-				}
-			}
-		}
-	}
-
 	// Main entry point for color correction
-	bool Correction(Mat& src, Mat& redSurface) {
+	bool correction(Mat& src, Mat& redSurface) {
 		int k = waitKey(30);
 
 		// Detect the surface
 		Mat surface;
-		while (!DetectSurface(src, redSurface, surface)) {
+		while (!detectSurface(src, redSurface, surface)) {
 			return false;
 		}
 
@@ -362,20 +326,16 @@ public:
 
 		// Approach 1.
 		Mat fix1(screenHeight, screenWidth, CV_8UC3, Scalar(255, 255, 255));
-		AddingMask(input, surface, fix1);
+		addingMask(input, surface, fix1);
 
 		// Approach 2. Division.
 		Mat fix2(screenHeight, screenWidth, CV_8UC3, Scalar(255, 255, 255));
-		Division(input, surface, fix2);
-
-		// Approach 3. Division.
-		Mat fix3(screenHeight, screenWidth, CV_8UC3, Scalar(255, 255, 255));
-		Combi(input, surface, fix3);
+		division(input, surface, fix2);
 
 		imshow("Fullscreen", fix1);
 
-		double alpha[3] = { 1.0, 1.0, 1.0 };
-		int beta[3] = { 0, 0, 0 };
+		double alpha[2] = { 1.0, 1.0 };
+		int beta[2] = { 0, 0 };
 
 		bool changed = false;
 		int lastImg = 1;
@@ -391,28 +351,24 @@ public:
 
 				surface.convertTo(changedSurface, -1, alpha[lastImg-1], beta[lastImg-1]);
 				if (lastImg == 1)
-					AddingMask(input, changedSurface, fix1);
+					addingMask(input, changedSurface, fix1);
 				if (lastImg == 2)
-					Division(input, changedSurface, fix2);
-				if (lastImg == 3)
-					Combi(input, changedSurface, fix3);
+					division(input, changedSurface, fix2);
 			}
 
+			// Key = 1
 			if (lastImg == 1 || k == 49) {
 				imshow("Fullscreen", fix1);
 				lastImg = 1;
 			}
+
+			// Key = 2
 			if (lastImg == 2 || k == 50) {
 				imshow("Fullscreen", fix2);
 				lastImg = 2;
 			}
 
-			if (lastImg == 3 || k == 51) {
-				imshow("Fullscreen", fix3);
-				lastImg = 3;
-			}
-
-			// Original Image
+			// Key = 0 Original Image
 			if (lastImg == 0 || k == 48) {
 				imshow("Fullscreen", input);
 				lastImg = 0;
@@ -420,29 +376,26 @@ public:
 
 			// Adjust Contrast and Brightness
 			switch (k) {
-			case 'u': if (lastImg != 0) { alpha[lastImg-1] -= 0.1; changed = true; }break;
-			case 'j': if (lastImg != 0) { alpha[lastImg-1] += 0.1; changed = true; } break;
+			case 'u': if (!lastImg) { alpha[lastImg-1] -= 0.1; changed = true; } break;
+			case 'j': if (!lastImg) { alpha[lastImg-1] += 0.1; changed = true; } break;
 
-			case 'i': if (lastImg != 0) { beta[lastImg-1] -= 5;  changed = true; } break;
-			case 'k': if (lastImg != 0) { beta[lastImg-1] += 5;  changed = true; } break;
+			case 'i': if (!lastImg) { beta[lastImg-1] -= 5;  changed = true; } break;
+			case 'k': if (!lastImg) { beta[lastImg-1] += 5;  changed = true; } break;
 			}
-
-			if(k != -1) cout << "key " << k << endl;
-
 		}
 
 		return true;
 	}
 
 	// Manual surface
-	bool ManualSurface(Mat& src, vector<Point>& points) {
+	bool manualSurface(Mat& src, vector<Point>& points) {
 		//Create a window
 		namedWindow("Draw", 1);
 
 		Mat draw;
 		src.copyTo(draw);
 		//set the callback function for any mouse event
-		setMouseCallback("Draw", CallBackFunc, &points);
+		setMouseCallback("Draw", callBackFunc, &points);
 
 		unsigned int lastSize = 0;
 		int k = waitKey(30);
@@ -476,16 +429,16 @@ public:
 	// https://github.com/bsdnoobz/opencv-code/blob/master/shape-detect.cpp
 	// https://github.com/bsdnoobz/opencv-code/blob/master/quad-segmentation.cpp
 	// 
-	bool DetectSurface(Mat& src, Mat& redSurface, Mat& surface) {
+	bool detectSurface(Mat& src, Mat& redSurface, Mat& surface) {
 
 		vector<Point> contours_poly;
 
-		if (!FindSurfaceContours(src, redSurface, contours_poly)) {
+		if (!findSurfaceContours(src, redSurface, contours_poly)) {
 			// User exits
 			return false;
 		}
 
-		AdjustPerspective(src, surface, contours_poly);
+		adjustPerspective(src, surface, contours_poly);
 
 		// Project surface back
 		imshow("Fullscreen", surface);
@@ -495,8 +448,8 @@ public:
 			k = waitKey(30);
 			if (k == 13) return true; // Enter - Accepts Surface
 			if (k == 'r') { // R - change surface manual
-				if (ManualSurface(src, contours_poly)) {
-					AdjustPerspective(src, surface, contours_poly);
+				if (manualSurface(src, contours_poly)) {
+					adjustPerspective(src, surface, contours_poly);
 					imshow("Fullscreen", surface);
 				}
 			}
@@ -507,12 +460,12 @@ public:
 
 
 	// Open White Fullscreen
-	void OpenWhiteFullscreen() {
+	void openWhiteFullscreen() {
 		namedWindow("Fullscreen", CV_WINDOW_NORMAL);
 
 		int posX = 0;
 		int posY = 0;
-		GetDesktopResolution(screenWidth, screenHeight, posX, posY);
+		getDesktopResolution(screenWidth, screenHeight, posX, posY);
 
 		Mat white(screenWidth, screenHeight, CV_8UC3, Scalar(255, 255, 255));
 
@@ -523,7 +476,7 @@ public:
 	}
 
 	// Get From Video Stream
-	int FromVideoStream(bool kinect) {
+	int fromVideoStream(bool kinect) {
 		// Kinect
 		HANDLE hColorStreamHandle = NULL;
 		INuiSensor* pNuiSensor = nullptr;
@@ -532,7 +485,7 @@ public:
 		VideoCapture cap;
 
 		if (kinect) {
-			InitKinect(&pNuiSensor, &hColorStreamHandle);
+			initKinect(&pNuiSensor, &hColorStreamHandle);
 			if (pNuiSensor == nullptr || hColorStreamHandle == NULL) {
 				cerr << "Error: Failed to open Kinect camera" << endl;
 				return E_FAIL;
@@ -546,7 +499,7 @@ public:
 			}
 		}
 
-		OpenWhiteFullscreen();
+		openWhiteFullscreen();
 
 		// Preview
 		namedWindow("Camera", cv::WINDOW_AUTOSIZE);
@@ -565,7 +518,7 @@ public:
 		while (k != 27) {
 
 			if (kinect) // get a new frame from Kinect
-				frame = NextKinectFrame(pNuiSensor, hColorStreamHandle);
+				frame = nextKinectFrame(pNuiSensor, hColorStreamHandle);
 			else // get a new frame from camera
 				cap >> frame;
 
@@ -594,8 +547,8 @@ public:
 
 				// Get Next Frame
 				if (kinect) {// get a new frame from Kinect
-					frame = NextKinectFrame(pNuiSensor, hColorStreamHandle);
-					frame = NextKinectFrame(pNuiSensor, hColorStreamHandle);
+					frame = nextKinectFrame(pNuiSensor, hColorStreamHandle);
+					frame = nextKinectFrame(pNuiSensor, hColorStreamHandle);
 					// Kinect has alpha channel
 					cvtColor(frame, frame, cv::COLOR_BGRA2BGR);
 				}
@@ -605,7 +558,7 @@ public:
 				frame.copyTo(src);
 
 				destroyWindow("Camera");
-				if (Correction(src, redSurface)) {
+				if (correction(src, redSurface)) {
 					break;
 				}
 				else {
@@ -619,7 +572,7 @@ public:
 	}
 
 	// Get From File (Test)
-	void FromFile() {
+	void fromFile() {
 		Mat redSurface = imread("Images/02_tr.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
 		Mat src = imread("Images/02_tt.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
 
@@ -637,8 +590,8 @@ public:
 			return;
 		}
 
-		OpenWhiteFullscreen();
-		Correction(src, redSurface);
+		openWhiteFullscreen();
+		correction(src, redSurface);
 	}
 
 };
@@ -694,15 +647,15 @@ int main(int argc, char** argv) {
 
 	if (cmdOptionExists(argv, argv + argc, "-f"))
 	{
-		kicc.FromFile();
+		kicc.fromFile();
 	}
 	else if (cmdOptionExists(argv, argv + argc, "-c"))
 	{
-		kicc.FromVideoStream(false /* Kinect */);
+		kicc.fromVideoStream(false /* Kinect */);
 	}
 	else
 	{
-		kicc.FromVideoStream(true /* Kinect */);
+		kicc.fromVideoStream(true /* Kinect */);
 	}
 
 	while (waitKey() != 27) continue;
