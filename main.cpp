@@ -1,4 +1,6 @@
 ﻿#include <iostream>
+#include <sstream>
+#include <string>
 #include <opencv2/opencv.hpp>
 #include "Windows.h"
 #include "NuiApi.h"
@@ -20,12 +22,15 @@ using namespace std;
 class Kicc {
 
 private:
-	int width = 640; // Kinect v1 height = 640
-	int height = 480; // Kinect v1 width =  480
-	int screenWidth = 640;
-	int screenHeight = 480;
+	// Kinect resolution
+	NUI_IMAGE_RESOLUTION resolution = NUI_IMAGE_RESOLUTION_640x480;
+	unsigned int width;
+	unsigned int height;
 
-	// TODO: this is test input
+	// Screen Size
+	int screenWidth;
+	int screenHeight;
+
 	Mat input;
 
 	// https://gist.github.com/DaniilTomilow/1088bca80f5a1f449f15
@@ -194,13 +199,11 @@ private:
 
 	// Init Kinect Sensor
 	HRESULT initKinect(INuiSensor** sensor, HANDLE* hColorStreamHandle) {
-		NUI_IMAGE_RESOLUTION resolution = NUI_IMAGE_RESOLUTION_640x480;
-
 		// If we want the width
 		unsigned long widthTmp, heightTmp;
 		NuiImageResolutionToSize(resolution, widthTmp, heightTmp);
-		UINT width = static_cast<UINT>(widthTmp);
-		UINT height = static_cast<UINT>(heightTmp);
+		width = static_cast<unsigned int>(widthTmp);
+		height = static_cast<unsigned int>(heightTmp);
 
 		NUI_IMAGE_TYPE imageType = NUI_IMAGE_TYPE_COLOR;
 
@@ -270,6 +273,13 @@ private:
 	}
 
 public:
+
+	void setInputFile(char* path) {
+		string inputImage = string(path);
+		// TODO: this is just test
+		input = imread(inputImage, CV_LOAD_IMAGE_COLOR);
+	}
+
 	//
 	// First Approach. Fix orig with add mask
 	// 
@@ -312,6 +322,24 @@ public:
 
 	// Main entry point for color correction
 	bool correction(Mat& src, Mat& redSurface) {
+		if (!src.data)                              // Check for invalid input
+		{
+			cout << "Could not open or find the src image" << std::endl;
+			return false;
+		}
+
+		if (!redSurface.data)                              // Check for invalid input
+		{
+			cout << "Could not open or find the red surface" << std::endl;
+			return false;
+		}
+
+		if (!input.data)                              // Check for invalid input
+		{
+			cout << "Could not open or find the orig image" << std::endl;
+			return false;
+		}
+
 		int k = waitKey(30);
 
 		// Detect the surface
@@ -320,8 +348,6 @@ public:
 			return false;
 		}
 
-		// TODO: this is just test
-		input = imread("Images/jap_o.jpg", CV_LOAD_IMAGE_COLOR);
 		resize(input, input, Size(screenWidth, screenHeight));
 
 		// Approach 1.
@@ -340,8 +366,9 @@ public:
 		bool changed = false;
 		int lastImg = 1;
 
-		Mat changedSurface;
+		Mat changedSurface = surface.clone();
 
+		// ECS = Exit App
 		while (k != 27) {
 			k = waitKey(30);
 
@@ -376,11 +403,18 @@ public:
 
 			// Adjust Contrast and Brightness
 			switch (k) {
-			case 'u': if (!lastImg) { alpha[lastImg-1] -= 0.1; changed = true; } break;
-			case 'j': if (!lastImg) { alpha[lastImg-1] += 0.1; changed = true; } break;
+			case 'u': if (lastImg != 0) { alpha[lastImg-1] -= 0.1; changed = true; } break;
+			case 'j': if (lastImg != 0) { alpha[lastImg-1] += 0.1; changed = true; } break;
 
-			case 'i': if (!lastImg) { beta[lastImg-1] -= 5;  changed = true; } break;
-			case 'k': if (!lastImg) { beta[lastImg-1] += 5;  changed = true; } break;
+			case 'i': if (lastImg != 0) { beta[lastImg-1] -= 5;  changed = true; } break;
+			case 'k': if (lastImg != 0) { beta[lastImg-1] += 5;  changed = true; } break;
+			}
+
+			// Save File
+			if (k == 13) {
+				stringstream fileName;
+				fileName << "Images/surface_" << lastImg << ".jpg";
+				imwrite(fileName.str(), changedSurface);
 			}
 		}
 
@@ -576,20 +610,6 @@ public:
 		Mat redSurface = imread("Images/02_tr.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
 		Mat src = imread("Images/02_tt.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
 
-		input = imread("Images/jap_o.jpg", CV_LOAD_IMAGE_COLOR);   // Read the file
-
-		if (!src.data)                              // Check for invalid input
-		{
-			cout << "Could not open or find the image" << std::endl;
-			return;
-		}
-
-		if (!input.data)                              // Check for invalid input
-		{
-			cout << "Could not open or find the orig image" << std::endl;
-			return;
-		}
-
 		openWhiteFullscreen();
 		correction(src, redSurface);
 	}
@@ -618,7 +638,6 @@ void help() {
 	cout << "usage: ./kicc -i=string [options]" << endl;
 	cout << "options:" << endl;
 	cout << "-i input path" << endl;
-	cout << "-k Kinect Camera" << endl;
 	cout << "-c Video Camera" << endl;
 	cout << "-f Test Files" << endl;
 	cout << "-f this message" << endl;
@@ -631,7 +650,8 @@ int main(int argc, char** argv) {
 
 	Kicc kicc;
 
-	char code = 'f';
+	// Debug code
+	char code = 'k';
 
 	if (cmdOptionExists(argv, argv + argc, "-h"))
 	{
@@ -641,20 +661,25 @@ int main(int argc, char** argv) {
 	char* input = getCmdOption(argv, argv + argc, "-i");
 	if (input)
 	{
-		// Do interesting things
-		// ...
-	}
-
-	if (cmdOptionExists(argv, argv + argc, "-f"))
-	{
-		kicc.fromFile();
-	}
-	else if (cmdOptionExists(argv, argv + argc, "-c"))
-	{
-		kicc.fromVideoStream(false /* Kinect */);
+		kicc.setInputFile(input);
 	}
 	else
 	{
+		// Load per default the Jap Girl
+		kicc.setInputFile("Images/jap_o.jpg");
+	}
+
+	if (cmdOptionExists(argv, argv + argc, "-f") || code == 'f')
+	{
+		kicc.fromFile();
+	}
+	else if (cmdOptionExists(argv, argv + argc, "-c") || code == 'c')
+	{
+		kicc.fromVideoStream(false /* No Kinect */);
+	}
+	else
+	{
+		// Default, Try open stream from Kinect
 		kicc.fromVideoStream(true /* Kinect */);
 	}
 
